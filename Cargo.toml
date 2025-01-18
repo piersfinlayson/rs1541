@@ -6,6 +6,7 @@ authors = ["Piers Finlayson <piers@piers.rocks>"]
 description = "Rust bindings and helper functions for accessing Commodore disk drives through OpenCBM"
 repository  = "https://github.com/piersfinlayson/rs1541"
 license = "GPL-3.0"
+documentation = "https://docs.rs/rs1541"
 
 [lib]
 name = "rs1541"
