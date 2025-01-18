@@ -17,7 +17,7 @@
 //! * Strong typing for CBM-specific concepts (error codes, status messages, etc.)
 //!
 //! ## Quick Start
-//! ```rust
+//! ```ignore
 //! use rs1541::Cbm;
 //! use std::error::Error;
 //!

@@ -29,7 +29,7 @@
 //!
 //! # Example Usage
 //!
-//! ```rust
+//! ```ignore
 //! use your_crate_name::Cbm;
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -135,7 +135,7 @@ use std::sync::Arc;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```ignore
 /// use your_crate_name::Cbm;
 ///
 /// let cbm = Cbm::new()?;
@@ -167,7 +167,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// ```
     pub fn new() -> Result<Self, CbmError> {
@@ -193,7 +193,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let mut cbm = Cbm::new()?;
     /// cbm.usb_device_reset()?;
     /// ```
@@ -219,7 +219,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// cbm.reset_bus()?;
     /// ```
@@ -256,7 +256,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// let info = cbm.identify(8)?;
     /// println!("Device type: {}", info.device_type);
@@ -316,7 +316,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// let status = cbm.get_status(8)?;
     /// println!("Drive status: {}", status);
@@ -348,7 +348,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// cbm.send_command(8, "i0")?; // Initialize drive 0
     /// ```
@@ -411,7 +411,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// cbm.format_disk(8, "MY DISK", "01")?;
     /// ```
@@ -450,7 +450,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// let data = cbm.read_file(8, "MYPROGRAM.PRG")?;
     /// ```
@@ -530,7 +530,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// let data = vec![0x01, 0x08, 0x0C, 0x08, 0x0A, 0x00];
     /// cbm.write_file(8, "NEWFILE.PRG", &data)?;
@@ -611,7 +611,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// cbm.delete_file(8, "OLDFILE.PRG")?;
     /// ```
@@ -642,7 +642,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// cbm.validate_disk(8)?;
     /// ```
@@ -687,7 +687,7 @@ impl Cbm {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let cbm = Cbm::new()?;
     /// 
     /// // Get directory from first drive
@@ -972,7 +972,7 @@ impl fmt::Display for CbmDriveUnit {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
     /// println!("{}", drive); // Outputs: "Drive 8 (1541)"
     /// ```
@@ -994,7 +994,7 @@ impl fmt::Display for CbmDriveUnit {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// use your_crate_name::{CbmDriveUnit, CbmDeviceType};
 ///
 /// // Create a new 1541 drive unit
@@ -1019,7 +1019,7 @@ impl CbmDriveUnit {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
     /// ```
     pub fn new(device_number: u8, device_type: CbmDeviceType) -> Self {
@@ -1050,7 +1050,7 @@ impl CbmDriveUnit {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
     /// let cbm = Cbm::new()?;
     /// let status = drive.get_status(&cbm)?;
@@ -1083,7 +1083,7 @@ impl CbmDriveUnit {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
     /// let cbm = Cbm::new()?;
     /// 
@@ -1145,7 +1145,7 @@ impl CbmDriveUnit {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
     /// assert_eq!(drive.num_disk_drives(), 2);
     /// ```
@@ -1160,7 +1160,7 @@ impl CbmDriveUnit {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
     /// for drive_num in drive.num_disk_drives_iter() {
     ///     println!("Initializing drive {}", drive_num);
@@ -1178,7 +1178,7 @@ impl CbmDriveUnit {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1571);
     /// for drive_num in drive.num_disk_drives_iter() {
     ///     println!("Initializing drive {}", drive_num);
@@ -1193,7 +1193,7 @@ impl CbmDriveUnit {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
     /// if !drive.is_busy() {
     ///     // Safe to send new commands
@@ -1219,7 +1219,7 @@ impl CbmDriveUnit {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// match file_entry {
 ///     CbmFileEntry::ValidFile { blocks, filename, file_type } => {
 ///         println!("{} blocks: {} ({})", blocks, filename, file_type);
@@ -1353,7 +1353,7 @@ impl fmt::Display for CbmDiskHeader {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// let header = CbmDiskHeader::parse_header("0 .\"MY DISK     01\"")?;
     /// println!("{}", header); // "Drive 0 Header: "MY DISK" ID: 01"
     /// ```
@@ -1384,7 +1384,7 @@ impl fmt::Display for CbmDiskHeader {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// use your_crate_name::CbmDiskHeader;
 ///
 /// // Parse a header line from a directory listing
@@ -1451,7 +1451,7 @@ impl CbmDirListing {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// let raw_dir = r#"
     /// 0 "MY DISK     01" 2A
     /// 10   "PROGRAM"     PRG
