@@ -5,9 +5,9 @@
 //! * Identify the disk drive at device 8
 //! * Get the status of device 8
 //! * Read the directory listing of the inserted disk.
-//! 
+//!
 //! When run with a 1541, with the standard demo disk inserted, will output:
-//! 
+//!
 //! Drive type at device 8: CBM 1541: 1540 or 1541
 //! Drive status: 00,OK,00,00
 //! Directory listing:
@@ -38,7 +38,7 @@
 //! Filename: "load address.prg"         Blocks:   8
 //! Filename: "unscratch.prg"            Blocks:   7
 //! Filename: "header change.prg"        Blocks:   5
-//! Free blocks: 403 
+//! Free blocks: 403
 
 use rs1541::Cbm;
 use std::error::Error;

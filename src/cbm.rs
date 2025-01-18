@@ -1,5 +1,5 @@
 //! A Rust interface for interacting with Commodore disk drives via OpenCBM
-//! 
+//!
 //! This module provides a safe, idiomatic Rust wrapper around the OpenCBM library,
 //! allowing modern systems to interact with Commodore disk drives (like the 1541)
 //! through XUM1541-compatible USB adapters.
@@ -105,7 +105,7 @@
 //! - Operations are synchronous
 //! - Some advanced 1571/1581 features may not be supported
 //! - Drive/DOS commands are limited to standard CBM DOS operations
-//! 
+//!
 pub use crate::cbmtype::CbmDeviceInfo;
 use crate::cbmtype::{
     CbmDeviceType, CbmError, CbmErrorNumber, CbmErrorNumberOk, CbmFileType, CbmStatus,
@@ -139,7 +139,7 @@ use std::sync::Arc;
 /// use your_crate_name::Cbm;
 ///
 /// let cbm = Cbm::new()?;
-/// 
+///
 /// // Get directory listing
 /// let dir = cbm.dir(8, None)?;
 /// println!("{}", dir);
@@ -718,10 +718,10 @@ impl Cbm {
     ///
     /// ```ignore
     /// let cbm = Cbm::new()?;
-    /// 
+    ///
     /// // Get directory from first drive
     /// let dir = cbm.dir(8, Some(0))?;
-    /// 
+    ///
     /// // Print directory contents
     /// println!("Disk name: {}", dir.header.name);
     /// for file in &dir.files {
@@ -1115,7 +1115,7 @@ impl CbmDriveUnit {
     /// ```ignore
     /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
     /// let cbm = Cbm::new()?;
-    /// 
+    ///
     /// // Initialize both drives, ignoring "drive not ready" errors
     /// let status = drive.send_init(cbm, &vec![CbmErrorNumber::DriveNotReady])?;
     /// ```
@@ -1367,7 +1367,7 @@ pub struct CbmDiskHeader {
 impl CbmDiskHeader {
     /// Maximum length of a disk name (16 characters)
     pub const MAX_NAME_LENGTH: usize = 16;
-    
+
     /// Required length of a disk ID (2 characters)
     pub const ID_LENGTH: usize = 2;
 }

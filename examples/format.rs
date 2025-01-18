@@ -1,7 +1,7 @@
 //! Format Example
-//! 
+//!
 //! ⚠️ **Warning:** Formats the disk in the drive, unless write protected
-//! 
+//!
 //! Formats a disk and then returns the directory listing
 
 use rs1541::Cbm;

@@ -1,8 +1,8 @@
-use rs1541::Cbm;
-use log::{info, LevelFilter};
-use rustyline::{DefaultEditor, error::ReadlineError};
 use anyhow::Result;
 use clap::Parser;
+use log::{info, LevelFilter};
+use rs1541::Cbm;
+use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -53,7 +53,10 @@ fn main() -> Result<()> {
                     "quit" | "exit" | "q" | "x" => break,
 
                     "identify" | "id" | "i" => match cbm.identify(device) {
-                        Ok(info) => println!("Device type: {} description: {}", info.device_type, info.description),
+                        Ok(info) => println!(
+                            "Device type: {} description: {}",
+                            info.device_type, info.description
+                        ),
                         Err(e) => println!("Error: {}", e),
                     },
 
