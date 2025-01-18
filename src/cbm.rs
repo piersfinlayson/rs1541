@@ -178,6 +178,35 @@ impl Cbm {
         })
     }
 
+    /// EXPERIMENTAL
+    ///
+    /// Creates a new CBM instance and opens the OpenCBM XUM1541 driver.
+    /// Will retry and reset the USB bus if it needs to to successfully open the
+    /// driver.
+    ///
+    /// This function attempts to initialize communication with the OpenCBM driver
+    /// and returns a wrapped handle that can be used for further operations.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CbmError` if:
+    /// - The OpenCBM driver cannot be opened after multiple attempts
+    /// - No XUM1541 device is connected
+    /// - The device is in use by another process
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let cbm = Cbm::try_new()?;
+    /// ```
+    pub fn try_new() -> Result<Self, CbmError> {
+        let opencbm = OpenCbm::try_new()?;
+
+        Ok(Self {
+            handle: Arc::new(Mutex::new(Some(opencbm))),
+        })
+    }
+
     /// Resets the USB device connection.
     ///
     /// This is a potentially risky operation that should be used with caution.

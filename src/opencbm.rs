@@ -171,6 +171,11 @@ macro_rules! opencbm_thread_timeout {
 /// synchronization when accessing the hardware bus.
 impl OpenCbm {
     pub fn new() -> Result<Self, OpenCbmError> {
+        OpenCbm::open_driver()
+    }
+
+    /// Tries much harder than new() to successfully open the driver
+    pub fn try_new() -> Result<Self, OpenCbmError> {
         try_initialize_cbm()
     }
 

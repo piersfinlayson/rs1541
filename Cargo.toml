@@ -1,6 +1,6 @@
 [package]
 name = "rs1541"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Piers Finlayson <piers@piers.rocks>"]
 description = "Rust bindings and helper functions for accessing Commodore disk drives through OpenCBM"
