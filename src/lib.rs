@@ -61,7 +61,7 @@ pub use cbmtype::{
     CbmDeviceInfo, CbmDeviceType, CbmError, CbmErrorNumber, CbmErrorNumberOk, CbmFileMode,
     CbmFileType, CbmOperation, CbmOperationType, CbmStatus,
 };
-pub use validate::validate_device;
+pub use validate::{validate_device, DeviceValidation};
 
 // Contains OpenCBM ffi wrappers - not exposed directly
 mod opencbm;
