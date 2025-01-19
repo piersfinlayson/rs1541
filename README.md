@@ -139,12 +139,13 @@ Provides an interactive CLI to exercise some of the rs1541/OpenCBM functionality
 
 ### OpenCBM
 
-rs1541 relies on OpenCBM.  You must build and install OpenCBM.  I've made a few mods to OpenCBM to make it work more reliably so I suggest you use my form.  You can build and isntall it like this:
+rs1541 relies on OpenCBM.  You must build and install OpenCBM before building rs1541.  I've made a few mods to OpenCBM to make it work more reliably so I suggest you use my fork.  You can build and isntall it like this:
 
 ```
 sudo apt-get install build-essential libusb-1.0-0-dev usbutils cc65 linux-headers-$(uname -r)
 git clone https://github.com/piersfinlayson/OpenCBM
 cd OpemCBM
+git checkout all-features
 make -f LINUX/Makefile plugin
 sudo make -f LINUX/Makefile install install-plugin
 sudo adduser $USER opencbm
