@@ -1,7 +1,6 @@
-use anyhow::Result;
 use clap::Parser;
 use log::{info, LevelFilter};
-use rs1541::Cbm;
+use rs1541::{AsciiString, Cbm, CbmError, CbmString};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(Parser, Debug)]
@@ -16,7 +15,7 @@ struct Args {
     verbose: u8,
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), CbmError> {
     let args = Args::parse();
     let mut device = args.device;
 
@@ -36,13 +35,18 @@ fn main() -> Result<()> {
     let mut cbm = Cbm::new()?;
 
     // Setup command line editor
-    let mut rl = DefaultEditor::new()?;
+    let mut rl = DefaultEditor::new().map_err(|e| CbmError::OtherError {
+        message: e.to_string(),
+    })?;
 
     loop {
         let readline = rl.readline("test_opencbm> ");
         match readline {
             Ok(line) => {
-                rl.add_history_entry(line.as_str())?;
+                rl.add_history_entry(line.as_str())
+                    .map_err(|e| CbmError::OtherError {
+                        message: e.to_string(),
+                    })?;
 
                 let cmd: Vec<&str> = line.split_whitespace().collect();
                 if cmd.is_empty() {
@@ -109,7 +113,7 @@ fn main() -> Result<()> {
                             continue;
                         }
                         let cmd_str = cmd[1..].join(" ");
-                        match cbm.send_command(device, &cmd_str) {
+                        match cbm.send_command(device, &CbmString::from_ascii_bytes(cmd_str.as_bytes())) {
                             Ok(()) => {
                                 println!("Command sent successfully");
                                 // Get status after command
@@ -126,7 +130,9 @@ fn main() -> Result<()> {
                             println!("Usage: format <name> <id>");
                             continue;
                         }
-                        match cbm.format_disk(device, cmd[1], cmd[2]) {
+                        let disk_name = AsciiString::from_ascii_str(cmd[1]);
+                        let disk_id = AsciiString::from_ascii_str(cmd[2]);
+                        match cbm.format_disk(device, &disk_name, &disk_id) {
                             Ok(status) => println!("Format complete: {}", status),
                             Err(e) => println!("Error: {}", e),
                         }

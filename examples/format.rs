@@ -4,10 +4,9 @@
 //!
 //! Formats a disk and then returns the directory listing
 
-use rs1541::Cbm;
-use std::error::Error;
+use rs1541::{AsciiString, Cbm, CbmError};
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), CbmError> {
     // Driver automatically opens on creation and closes on drop
     let cbm = Cbm::new()?;
 
@@ -18,7 +17,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Returns Ok(CbmStatus) if the format command was successfully sent to
     // the disk, but the format itself may fail - in which case CbmStatus
     // will contain the error code reported by the drive.
-    let status = cbm.format_disk(8, disk_name, disk_id)?;
+    let ascii_disk_name = AsciiString::from_ascii_str(disk_name);
+    let ascii_disk_id = AsciiString::from_ascii_str(disk_id);
+    let status = cbm.format_disk(8, &ascii_disk_name, &ascii_disk_id)?;
     println!("Drive status after formatting: {}", status);
 
     // Read directory

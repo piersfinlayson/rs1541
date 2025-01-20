@@ -21,7 +21,7 @@
 //! cargo run --example async
 //! ```use rs1541::Cbm;
 
-use rs1541::Cbm;
+use rs1541::{Cbm, CbmError};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
@@ -40,7 +40,7 @@ impl fmt::Display for TaskError {
 impl Error for TaskError {}
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), CbmError> {
     let cbm = Arc::new(Cbm::new()?);
 
     // Thread 1
@@ -69,12 +69,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Wait for both threads to complete
     let (result1, result2) = tokio::join!(task1, task2);
-    result1
-        .unwrap()
-        .map_err(|e| Box::new(e) as Box<dyn Error>)?;
-    result2
-        .unwrap()
-        .map_err(|e| Box::new(e) as Box<dyn Error>)?;
+    result1.unwrap().map_err(|e| CbmError::OtherError {
+        message: e.to_string(),
+    })?;
+    result2.unwrap().map_err(|e| CbmError::OtherError {
+        message: e.to_string(),
+    })?;
 
     Ok(())
 }

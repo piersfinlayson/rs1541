@@ -52,7 +52,10 @@
 //! OpenCBM errors and drive-specific error codes.
 pub mod cbm;
 pub mod cbmtype;
+pub mod string;
+pub mod util;
 pub mod validate;
+
 pub use cbm::{
     Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose, CbmDirListing, CbmDiskHeader,
     CbmDriveUnit, CbmFileEntry,
@@ -61,10 +64,9 @@ pub use cbmtype::{
     CbmDeviceInfo, CbmDeviceType, CbmError, CbmErrorNumber, CbmErrorNumberOk, CbmFileMode,
     CbmFileType, CbmOperation, CbmOperationType, CbmStatus,
 };
+pub use string::{CbmString, AsciiString, PetsciiString};
+pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, petscii_to_ascii};
 pub use validate::{validate_device, DeviceValidation};
-
-// Contains OpenCBM ffi wrappers - not exposed directly
-mod opencbm;
 
 /// Minimum device number supported by Commodore disk drives
 pub const MIN_DEVICE_NUM: u8 = 8;

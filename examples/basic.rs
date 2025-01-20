@@ -40,10 +40,8 @@
 //! Filename: "header change.prg"        Blocks:   5
 //! Free blocks: 403
 
-use rs1541::Cbm;
-use std::error::Error;
-
-fn main() -> Result<(), Box<dyn Error>> {
+use rs1541::{Cbm, CbmError};
+fn main() -> Result<(), CbmError> {
     // Driver automatically opens on creation and closes on drop
     let cbm = Cbm::new()?;
 

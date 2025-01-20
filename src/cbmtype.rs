@@ -1,4 +1,4 @@
-use crate::opencbm::OpenCbmError;
+use xum1541::Error as Xum1541Error;
 
 use libc::{EBUSY, EINVAL, EIO, ENOENT, ENOTSUP, ENXIO, EPERM};
 use log::{debug, info, trace, warn};
@@ -8,6 +8,9 @@ use std::fmt;
 
 #[derive(Debug, PartialEq)]
 pub enum CbmError {
+    OtherError {
+        message: String,
+    },
     /// Device not responding or connection issues
     DeviceError {
         device: u8,
@@ -42,11 +45,6 @@ pub enum CbmError {
         device: u8,
         message: String,
     },
-    /// OpenCBM specific errors
-    OpenCbmError {
-        device: Option<u8>, // Some operations might not be device-specific
-        error: OpenCbmError,
-    },
     /// Maps to specific errno
     Errno(i32), // No device number as this is filesystem level
     /// Used when validation fails
@@ -58,43 +56,50 @@ pub enum CbmError {
     DriverNotOpen,
 }
 
-impl std::error::Error for CbmError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            CbmError::OpenCbmError { error, .. } => Some(error),
-            _ => None,
-        }
-    }
-}
-
-impl From<OpenCbmError> for CbmError {
-    fn from(error: OpenCbmError) -> Self {
+impl From<xum1541::Error> for CbmError {
+    fn from(error: xum1541::Error) -> Self {
         match error {
-            OpenCbmError::ConnectionError(msg) => CbmError::DeviceError {
+            Xum1541Error::UsbError { error } => CbmError::UsbError(error.to_string()),
+            Xum1541Error::PermissionError => CbmError::UsbError("Permission error".into()),
+            Xum1541Error::InitError { message } => CbmError::DeviceError {
                 device: 0,
-                message: msg,
+                message: message.to_string(),
             },
-            OpenCbmError::ThreadTimeout => CbmError::TimeoutError { device: 0 },
-            OpenCbmError::UnknownDevice(msg) => CbmError::DeviceError {
-                device: 0,
-                message: msg,
-            },
-            OpenCbmError::ThreadPanic => CbmError::DeviceError {
-                device: 0,
-                message: "Thread panic during device operation".into(),
-            },
-            OpenCbmError::Other(msg) => CbmError::DeviceError {
-                device: 0,
-                message: msg,
-            },
-            OpenCbmError::FailedCall(rc, msg) => CbmError::OpenCbmError {
-                device: None,
-                error: OpenCbmError::FailedCall(rc, msg),
-            },
-            OpenCbmError::UsbError(rc, msg) => CbmError::UsbError(format!("{:?} {}", rc, msg)),
-            OpenCbmError::DriverNotOpen() => {
-                CbmError::UsbError(format!("The OpenCBM driver is not open"))
+            Xum1541Error::FirmwareVersion { actual, expected } => {
+                CbmError::DeviceError {
+                    device: 0,
+                    message: format!("Invalid firmware version: {} (expected {})", actual, expected),
+                }
             }
+            Xum1541Error::CommunicationError{ message } => CbmError::DeviceError {
+                device: 0,
+                message,
+            },
+            Xum1541Error::Timeout{ dur: _ } => CbmError::TimeoutError { device: 0 },
+            Xum1541Error::InvalidState{ message } => CbmError::DeviceError {
+                device: 0,
+                message,
+            },
+            Xum1541Error::DeviceNotFound { vid, pid } => CbmError::DeviceError {
+                device: 0,
+                message: format!("No XUM1541 Device {vid:04x}/{pid:04x} found - is it connected and do you have permissions to access it?", vid=vid, pid=pid),
+            },
+            Xum1541Error::SerialMismatch { vid, pid, actual, expected } => CbmError::DeviceError {
+                device: 0,
+                message: format!("XUM1541 device {vid:04x}/{pid:04x} found, but non-matching serial numbers. Found {actual:?}, was looking for {expected}", vid=vid, pid=pid, actual=actual, expected=expected),
+            },
+            Xum1541Error::SizeTooLarge { attempt, max } => CbmError::DeviceError {
+                device: 0,
+                message: format!("Calling code attempted to read or write too many bytes {attempt} vs max {max}", attempt=attempt, max=max),
+            },
+            Xum1541Error::SizeTooSmall { attempt, min } => CbmError::DeviceError {
+                device: 0,
+                message: format!("Calling code attempted to read or write too few bytes {attempt} vs max {min}", attempt=attempt, min=min),
+            },
+            Xum1541Error::InternalError{ message } => CbmError::DeviceError {
+                device: 0,
+                message,
+            },
         }
     }
 }
@@ -112,13 +117,13 @@ impl CbmError {
     /// Convert the error to a an errno
     pub fn to_errno(&self) -> i32 {
         match self {
+            CbmError::OtherError { .. } => -1,
             CbmError::DeviceError { .. } => EIO,
             CbmError::ChannelError { .. } => EBUSY,
             CbmError::FileError { .. } => ENOENT,
             CbmError::CommandError { .. } => EIO,
             CbmError::TimeoutError { .. } => EIO,
             CbmError::InvalidOperation { .. } => ENOTSUP,
-            CbmError::OpenCbmError { .. } => EIO,
             CbmError::Errno(errno) => *errno,
             CbmError::ValidationError { .. } => EINVAL,
             CbmError::StatusError { .. } => EPERM,
@@ -140,6 +145,9 @@ impl CbmError {
 impl fmt::Display for CbmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            CbmError::OtherError { message } => {
+                write!(f, "CbmError: {}", message)
+            }
             CbmError::DeviceError { device, message } => {
                 write!(
                     f,
@@ -185,14 +193,6 @@ impl fmt::Display for CbmError {
                     "{}: Invalid operation: {}",
                     Self::format_device(Some(*device)),
                     message
-                )
-            }
-            CbmError::OpenCbmError { device, error } => {
-                write!(
-                    f,
-                    "{}: OpenCBM error: {}",
-                    Self::format_device(*device),
-                    error
                 )
             }
             CbmError::Errno(errno) => {
@@ -474,6 +474,52 @@ impl Default for CbmDeviceInfo {
 impl fmt::Display for CbmDeviceInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.device_type, self.description)
+    }
+}
+
+impl CbmDeviceInfo {
+    pub fn from_magic(magic: u16, magic2: Option<u16>) -> Self {
+        let (device_type, description) = match magic {
+            0xfeb6 => (CbmDeviceType::Cbm2031, String::from("2031")),
+            0xaaaa => (CbmDeviceType::Cbm1541, String::from("1540 or 1541")),
+            0xf00f => (CbmDeviceType::Cbm1541, String::from("1541-II")),
+            0xcd18 => (CbmDeviceType::Cbm1541, String::from("1541C")),
+            0x10ca => (CbmDeviceType::Cbm1541, String::from("DolphinDOS 1541")),
+            0x6f10 => (CbmDeviceType::Cbm1541, String::from("SpeedDOS 1541")),
+            0x2710 => (CbmDeviceType::Cbm1541, String::from("ProfessionalDOS 1541")),
+            0x8085 => (CbmDeviceType::Cbm1541, String::from("JiffyDOS 1541")),
+            0xaeea => (CbmDeviceType::Cbm1541, String::from("64'er DOS 1541")),
+            0x180d => (
+                CbmDeviceType::Cbm1541,
+                String::from("Turbo Access / Turbo Trans"),
+            ),
+            0x094c => (CbmDeviceType::Cbm1541, String::from("Prologic DOS")),
+            0xfed7 => (CbmDeviceType::Cbm1570, String::from("1570")),
+            0x02ac => (CbmDeviceType::Cbm1571, String::from("1571")),
+            0x01ba => match magic2 {
+                Some(0x4446) => (CbmDeviceType::FdX000, String::from("FD2000/FD4000")),
+                _ => (CbmDeviceType::Cbm1581, String::from("1581")),
+            },
+            0x32f0 => (CbmDeviceType::Cbm3040, String::from("3040")),
+            0xc320 | 0x20f8 => (CbmDeviceType::Cbm4040, String::from("4040")),
+            0xf2e9 => (CbmDeviceType::Cbm8050, String::from("8050 dos2.5")),
+            0xc866 | 0xc611 => (CbmDeviceType::Cbm8250, String::from("8250 dos2.7")),
+            _ => match magic2 {
+                Some(m2) => (
+                    CbmDeviceType::Unknown,
+                    format!("Unknown device: {:04x} {:04x}", magic, m2),
+                ),
+                None => (
+                    CbmDeviceType::Unknown,
+                    format!("Unknown device: {:04x}", magic),
+                ),
+            },
+        };
+
+        CbmDeviceInfo {
+            device_type,
+            description,
+        }
     }
 }
 
@@ -944,12 +990,6 @@ mod tests {
             error.to_string(),
             "Device 8: Drive returned error status: 21,READ ERROR,18,00"
         );
-
-        let error = CbmError::OpenCbmError {
-            device: None,
-            error: OpenCbmError::ThreadTimeout,
-        };
-        assert_eq!(error.to_string(), "n/a: OpenCBM error: FFI call timed out");
     }
 
     #[test]

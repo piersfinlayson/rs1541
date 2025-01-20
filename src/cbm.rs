@@ -110,7 +110,7 @@ pub use crate::cbmtype::CbmDeviceInfo;
 use crate::cbmtype::{
     CbmDeviceType, CbmError, CbmErrorNumber, CbmErrorNumberOk, CbmFileType, CbmStatus,
 };
-use crate::opencbm::{ascii_to_petscii, petscii_to_ascii, OpenCbm};
+use crate::{CbmString, AsciiString, PetsciiString};
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
@@ -149,11 +149,11 @@ use std::sync::Arc;
 /// ```
 #[derive(Debug, Clone)]
 pub struct Cbm {
-    handle: Arc<Mutex<Option<OpenCbm>>>,
+    handle: Arc<Mutex<Option<xum1541::Bus>>>,
 }
 
 impl Cbm {
-    /// Creates a new CBM instance and opens the OpenCBM XUM1541 driver.
+    /// Creates a new CBM instance and opens the XUM1541 driver.
     ///
     /// This function attempts to initialize communication with the OpenCBM driver
     /// and returns a wrapped handle that can be used for further operations.
@@ -171,46 +171,18 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// ```
     pub fn new() -> Result<Self, CbmError> {
-        let opencbm = OpenCbm::new()?;
+        let bus = xum1541::BusBuilder::new().build()?;
 
         Ok(Self {
-            handle: Arc::new(Mutex::new(Some(opencbm))),
+            handle: Arc::new(Mutex::new(Some(bus))),
         })
     }
 
-    /// EXPERIMENTAL
-    ///
-    /// Creates a new CBM instance and opens the OpenCBM XUM1541 driver.
-    /// Will retry and reset the USB bus if it needs to to successfully open the
-    /// driver.
-    ///
-    /// This function attempts to initialize communication with the OpenCBM driver
-    /// and returns a wrapped handle that can be used for further operations.
-    ///
-    /// # Errors
-    ///
-    /// Returns `CbmError` if:
-    /// - The OpenCBM driver cannot be opened after multiple attempts
-    /// - No XUM1541 device is connected
-    /// - The device is in use by another process
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let cbm = Cbm::try_new()?;
-    /// ```
-    pub fn try_new() -> Result<Self, CbmError> {
-        let opencbm = OpenCbm::try_new()?;
-
-        Ok(Self {
-            handle: Arc::new(Mutex::new(Some(opencbm))),
-        })
-    }
-
-    /// Resets the USB device connection.
+    /// Resets the USB device connection - by closing the driver then reopening
+    /// which in turn will force a device reset
     ///
     /// This is a potentially risky operation that should be used with caution.
-    /// If it returns `CbmError::DriverNotOpen`, the OpenCBM driver may need to
+    /// If it returns `CbmError::DriverNotOpen`, the xum1541 driver may need to
     /// be reopened with a new `Cbm` instance.
     ///
     /// # Errors
@@ -227,12 +199,20 @@ impl Cbm {
     /// cbm.usb_device_reset()?;
     /// ```
     pub fn usb_device_reset(&mut self) -> Result<(), CbmError> {
+        // Lock the old handle - will be unlocked when it goes out of scope
         let mut handle = self.handle.lock();
-        if let Some(h) = handle.as_mut() {
-            h.usb_device_reset().map_err(|e| e.into())
-        } else {
-            Err(CbmError::UsbError("No CBM handle".to_string()))
-        }
+
+        // Drop the old xum1541::Bus instance which will close the driver
+        let old_bus = handle.take();
+        drop(old_bus);
+
+        // Create a new instance (can fail)
+        let new_bus = xum1541::BusBuilder::new().build()?;
+
+        // Set the stored handle to the new instance
+        *handle = Some(new_bus);
+
+        Ok(())
     }
 
     /// Resets the entire IEC bus.
@@ -255,7 +235,7 @@ impl Cbm {
     pub fn reset_bus(&self) -> Result<(), CbmError> {
         self.handle
             .lock()
-            .as_ref() // Convert Option<OpenCbm> to Option<&OpenCbm>
+            .as_mut() // Convert Option<OpenCbm> to Option<&OpenCbm>
             .ok_or(CbmError::UsbError(
                 // Convert None to Err
                 "No CBM handle".to_string(),
@@ -291,40 +271,96 @@ impl Cbm {
     /// println!("Device type: {}", info.device_type);
     /// ```
     pub fn identify(&self, device: u8) -> Result<CbmDeviceInfo, CbmError> {
-        self.handle
-            .lock()
-            .as_ref()
-            .ok_or(CbmError::UsbError("No CBM handle".to_string()))?
-            .identify(device)
-            .map_err(|e| CbmError::DeviceError {
-                device,
-                message: e.to_string(),
-            })
+        // Issue a memory read of two bytes at address 0xff40
+        // For compatibility with DOS1 drives we'll only read 1 byte at a time
+        // (With DOS 2 we could pass in another byte to ask for 2 bytes)
+        let buf = self.read_drive_memory(device, 0xff40, 2)?;
+        let magic: u16 = ((buf[1] as u16) << 8) | (buf[0] as u16);
+
+        // Need to do some extra work for some drives
+        let (magic, magic2) = match magic {
+            0xaaaa => {
+                // Replace magic - not quite sure which drives this
+                // differentiates between
+                let buf = self.read_drive_memory(device, 0xfffe, 2)?;
+                let magic: u16 = ((buf[1] as u16) << 8) | (buf[0] as u16);
+                (magic, None)
+            }
+            0x01ba => {
+                // Leave magic as is, and add a second magic, to differentiate
+                // between 1581 and FDX000 drives
+                let buf = self.read_drive_memory(device, 0x8008, 2)?;
+                let magic2: u16 = ((buf[1] as u16) << 8) | (buf[0] as u16);
+                (magic, Some(magic2))
+            }
+            _ => (magic, None),
+        };
+
+        // Generate the device type from the magic number(s)
+        Ok(CbmDeviceInfo::from_magic(magic, magic2))
     }
 
-    fn get_status_already_locked(cbm: &OpenCbm, device: u8) -> Result<CbmStatus, CbmError> {
-        let (buf, result) = cbm
-            .device_status(device)
-            .map_err(|e| CbmError::DeviceError {
-                device,
-                message: e.to_string(),
-            })?;
+    /// Function to read a number of consecutive bytes from a drive
+    /// Currently only reads one byte at a time for DOS1 compatibility
+    pub fn read_drive_memory(
+        &self,
+        device: u8,
+        addr: u16,
+        size: usize,
+    ) -> Result<Vec<u8>, CbmError> {
+        let mut buf = vec![0u8; size];
 
-        if result < 0 {
-            return Err(CbmError::DeviceError {
-                device,
-                message: format!("Failed to get device status error {}", result),
-            });
+        // Split address into low and high bytes
+        let addr_low = (addr & 0xFF) as u8;
+        let addr_high = ((addr >> 8) & 0xFF) as u8;
+
+        // Read one byte at a time for DOS1 compatibility
+        for i in 0..size {
+            let cmd = vec![b'M', b'-', b'R', addr_low.wrapping_add(i as u8), addr_high];
+            self.send_command_petscii(device, &PetsciiString::from_petscii_bytes(&cmd))?;
+
+            let mut guard = self.handle.lock();
+            let bus = guard
+                .as_mut()
+                .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
+
+            bus.talk(device, 15)?;
+            bus.read(&mut buf[i..i + 1], 1).inspect_err(|_| {
+                let _ = bus.untalk();
+            })?;
+            bus.untalk()?;
         }
 
-        let status = String::from_utf8_lossy(&buf)
-            .split("\r")
-            .next()
-            .unwrap_or(&String::from_utf8_lossy(&buf))
-            .trim()
-            .to_string();
+        Ok(buf)
+    }
 
-        CbmStatus::new(&status, device)
+    pub fn write_drive_memory(&self, device: u8, addr: u16, data: &[u8]) -> Result<(), CbmError> {
+        // Split address into low and high bytes
+        let addr_low = (addr & 0xFF) as u8;
+        let addr_high = ((addr >> 8) & 0xFF) as u8;
+
+        // Write one byte at a time for DOS1 compatibility
+        for (i, &byte) in data.iter().enumerate() {
+            let cmd = vec![
+                b'M',
+                b'-',
+                b'W',
+                addr_low.wrapping_add(i as u8),
+                addr_high,
+                byte,
+            ];
+            self.send_command_petscii(device, &PetsciiString::from_petscii_bytes(&cmd))?;
+
+            let mut guard = self.handle.lock();
+            let bus = guard
+                .as_mut()
+                .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
+
+            bus.talk(device, 15)?;
+            bus.untalk()?;
+        }
+
+        Ok(())
     }
 
     /// Gets the status of a device.
@@ -351,73 +387,74 @@ impl Cbm {
     /// println!("Drive status: {}", status);
     /// ```
     pub fn get_status(&self, device: u8) -> Result<CbmStatus, CbmError> {
-        let guard = self.handle.lock();
-        let cbm = guard
-            .as_ref()
+        let mut guard = self.handle.lock();
+        let mut bus = guard
+            .as_mut()
             .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-        Self::get_status_already_locked(cbm, device)
+        Self::get_status_already_locked(&mut bus, device)
     }
 
-    /// Sends a command to a device.
-    ///
-    /// Commands are sent over channel 15 and allow direct communication
-    /// with the drive's DOS.
-    ///
-    /// # Arguments
-    ///
-    /// * `device` - Device number (typically 8-11 for disk drives)
-    /// * `command` - The command string to send (in ASCII, will be converted to PETSCII)
-    ///
-    /// # Errors
-    ///
-    /// Returns `CbmError` if:
-    /// - The device doesn't respond
-    /// - The command cannot be sent
-    /// - The driver is not open
-    ///
+    /// Send a command on a specific drive
+    /// 
+    /// There are a number of different variants of this function that allow
+    /// different types of strings to be passed in.  send_command() is likely
+    /// to be the easiest to use, as it accepts a CbmString, which is an enum
+    /// allowing ASCII or PETSCII strings to be passed in.
+    /// 
     /// # Example
-    ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
-    /// cbm.send_command(8, "i0")?; // Initialize drive 0
+    /// let cmd_str = String("n0:formatted,aa");
+    /// cbm.send_command(device, &CbmString::from_ascii_bytes(cmd_str.as_bytes()));
     /// ```
-    pub fn send_command(&self, device: u8, command: &str) -> Result<(), CbmError> {
-        let guard = self.handle.lock();
-        let cbm = guard
-            .as_ref()
+    pub fn send_command(&self, device: u8, cmd: &CbmString) -> Result<(), CbmError> {
+        self.send_command_petscii(device, &cmd.to_petscii())
+    }
+
+    /// Send a command on a specific drive
+    /// The command must be provided as a PetsciiString
+    pub fn send_command_petscii(&self, device: u8, cmd: &PetsciiString) -> Result<(), CbmError> {
+        let mut guard = self.handle.lock();
+        let bus = guard
+            .as_mut()
             .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
 
-        debug!("Send command: {}", command);
-
-        // Allocate channel 15 for commands
-        cbm.listen(device, 15).map_err(|e| CbmError::CommandError {
-            device,
-            message: format!("Listen failed: {}", e),
+        bus.listen(device, 15)?;
+        bus.write(cmd.as_bytes()).inspect_err(|_| {
+            let _ = bus.unlisten();
         })?;
+        bus.unlisten().map_err(|e| e.into())
+    }
 
-        // Convert command to PETSCII and send
-        let cmd_bytes = ascii_to_petscii(command);
-        let result = cbm
-            .raw_write(&cmd_bytes)
-            .map_err(|e| CbmError::CommandError {
-                device,
-                message: format!("Write failed: {}", e),
-            })?;
+    /// Sends a command string to a device after converting from ASCII to PETSCII
+    pub fn send_command_ascii(&self, device: u8, command: &AsciiString) -> Result<(), CbmError> {
+        self.send_command_petscii(device, &command.into())
+    }
 
-        if result != cmd_bytes.len() as i32 {
-            return Err(CbmError::CommandError {
-                device,
-                message: "Failed to write full command".into(),
-            });
-        }
-
-        // Cleanup
-        cbm.unlisten().map_err(|e| CbmError::CommandError {
+    /// Sends a string command to a device, converting from ASCII to PETSCII.
+    /// The input string must be ASCII-compatible.
+    ///
+    /// # Errors
+    /// Returns `CbmError` if:
+    /// - The string contains non-ASCII characters
+    /// - The device command fails
+    pub fn send_string_command_ascii(&self, device: u8, command: &str) -> Result<(), CbmError> {
+        let ascii = AsciiString::try_from(command).map_err(|e| CbmError::InvalidOperation {
             device,
-            message: format!("Unlisten failed: {}", e),
+            message: e.to_string(),
         })?;
+        self.send_command_ascii(device, &ascii)
+    }
 
-        Ok(())
+    /// Sends a string command that is already in PETSCII format.
+    /// The input string bytes must be valid PETSCII.
+    ///
+    /// # Errors
+    /// Returns `CbmError` if the device command fails
+    pub fn send_string_command_petscii(&self, device: u8, command: &str) -> Result<(), CbmError> {
+        self.send_command_petscii(
+            device,
+            &PetsciiString::from_petscii_bytes(command.as_bytes()),
+        )
     }
 
     /// Formats a disk.
@@ -444,9 +481,15 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// cbm.format_disk(8, "MY DISK", "01")?;
     /// ```
-    pub fn format_disk(&self, device: u8, name: &str, id: &str) -> Result<CbmStatus, CbmError> {
+    /// Format a disk with ASCII name and ID
+    pub fn format_disk(
+        &self,
+        device: u8,
+        name: &AsciiString,
+        id: &AsciiString,
+    ) -> Result<CbmStatus, CbmError> {
         // Validate ID length
-        if id.len() != 2 {
+        if id.as_bytes().len() != 2 {
             return Err(CbmError::InvalidOperation {
                 device,
                 message: "Disk ID must be 2 characters".into(),
@@ -455,8 +498,8 @@ impl Cbm {
 
         // Construct format command (N:name,id)
         let cmd = format!("n0:{},{}", name, id);
-        self.send_command(device, &cmd)?;
 
+        self.send_string_command_ascii(device, &cmd)?;
         self.get_status(device)
     }
 
@@ -467,7 +510,7 @@ impl Cbm {
     /// # Arguments
     ///
     /// * `device` - Device number (typically 8-11 for disk drives)
-    /// * `filename` - Name of the file to read
+    /// * `filename` - Name of the file to read in ascii
     ///
     /// # Errors
     ///
@@ -483,20 +526,18 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// let data = cbm.read_file(8, "MYPROGRAM.PRG")?;
     /// ```
-    pub fn read_file(&self, device: u8, filename: &str) -> Result<Vec<u8>, CbmError> {
+    /// Read a file with ASCII filename
+    pub fn read_file(&self, device: u8, filename: &AsciiString) -> Result<Vec<u8>, CbmError> {
         let guard = self.handle.lock();
-        let _cbm = guard
+        let _bus = guard
             .as_ref()
             .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-        let mut data = Vec::new();
 
-        // Find a free channel (0-14)
-        // In a real implementation, we'd use the CbmChannelManager here
         let channel = 2; // For demonstration
 
-        // Open file for reading
-        drop(guard); // Drop guard temporarily for send_command
-        self.send_command(device, &format!("{}", filename))?;
+        drop(guard);
+
+        self.send_command_ascii(device, filename)?;
 
         // Check status after open
         let status = self.get_status(device)?;
@@ -505,33 +546,35 @@ impl Cbm {
         }
 
         // Re-acquire guard for file operations
-        let guard = self.handle.lock();
-        let cbm = guard.as_ref().ok_or(CbmError::FileError {
+        let mut guard = self.handle.lock();
+        let bus = guard.as_mut().ok_or(CbmError::FileError {
             device,
             message: "No CBM handle".to_string(),
         })?;
 
         // Now read the file data
-        cbm.talk(device, channel).map_err(|e| CbmError::FileError {
+        bus.talk(device, channel).map_err(|e| CbmError::FileError {
             device,
             message: format!("Talk failed: {}", e),
         })?;
 
+        let mut data = Vec::new();
         loop {
-            let (buf, count) = cbm.raw_read(256).map_err(|e| CbmError::FileError {
+            let buf = &mut [0u8; 256];
+            let count = bus.read(buf, 256).map_err(|e| CbmError::FileError {
                 device,
                 message: format!("Read failed: {}", e),
             })?;
 
-            if count <= 0 {
+            data.extend_from_slice(&buf[..count as usize]);
+            if count < 256 {
+                debug!("Finished reading file");
                 break;
             }
-
-            data.extend_from_slice(&buf[..count as usize]);
         }
 
         // Cleanup
-        cbm.untalk().map_err(|e| CbmError::FileError {
+        bus.untalk().map_err(|e| CbmError::FileError {
             device,
             message: format!("Untalk failed: {}", e),
         })?;
@@ -546,7 +589,7 @@ impl Cbm {
     /// # Arguments
     ///
     /// * `device` - Device number (typically 8-11 for disk drives)
-    /// * `filename` - Name for the file
+    /// * `filename` - Name for the file in ascii
     /// * `data` - The data to write
     ///
     /// # Errors
@@ -564,21 +607,23 @@ impl Cbm {
     /// let data = vec![0x01, 0x08, 0x0C, 0x08, 0x0A, 0x00];
     /// cbm.write_file(8, "NEWFILE.PRG", &data)?;
     /// ```
-    pub fn write_file(&self, device: u8, filename: &str, data: &[u8]) -> Result<(), CbmError> {
+    pub fn write_file(
+        &self,
+        device: u8,
+        filename: &AsciiString,
+        data: &[u8],
+    ) -> Result<(), CbmError> {
         let guard = self.handle.lock();
-        let _cbm = guard
+        let _bus = guard
             .as_ref()
             .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
 
-        // Find a free channel (0-14)
-        // In a real implementation, we'd use the CbmChannelManager here
         let channel = 2; // For demonstration
 
-        // Drop guard for nested operations that need the mutex
         drop(guard);
 
         // Open file for writing with overwrite if exists
-        self.send_command(device, &format!("@:{}", filename))?;
+        self.send_string_command_ascii(device, &format!("@:{}", filename))?;
 
         // Check status after open
         let status = self.get_status(device)?;
@@ -587,14 +632,14 @@ impl Cbm {
         }
 
         // Reacquire guard for file operations
-        let guard = self.handle.lock();
-        let cbm = guard.as_ref().ok_or(CbmError::FileError {
+        let mut guard = self.handle.lock();
+        let bus = guard.as_mut().ok_or(CbmError::FileError {
             device,
             message: "No CBM handle".to_string(),
         })?;
 
         // Now write the file data
-        cbm.listen(device, channel)
+        bus.listen(device, channel)
             .map_err(|e| CbmError::FileError {
                 device,
                 message: format!("Listen failed: {}", e),
@@ -602,12 +647,12 @@ impl Cbm {
 
         // Write data in chunks
         for chunk in data.chunks(256) {
-            let result = cbm.raw_write(chunk).map_err(|e| CbmError::FileError {
+            let result = bus.write(chunk).map_err(|e| CbmError::FileError {
                 device,
                 message: format!("Write failed: {}", e),
             })?;
 
-            if result != chunk.len() as i32 {
+            if result != chunk.len() {
                 return Err(CbmError::FileError {
                     device,
                     message: "Failed to write complete chunk".into(),
@@ -616,7 +661,7 @@ impl Cbm {
         }
 
         // Cleanup
-        cbm.unlisten().map_err(|e| CbmError::FileError {
+        bus.unlisten().map_err(|e| CbmError::FileError {
             device,
             message: format!("Unlisten failed: {}", e),
         })?;
@@ -629,7 +674,7 @@ impl Cbm {
     /// # Arguments
     ///
     /// * `device` - Device number (typically 8-11 for disk drives)
-    /// * `filename` - Name of the file to delete
+    /// * `filename` - Name of the file to delete as ascii
     ///
     /// # Errors
     ///
@@ -644,12 +689,10 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// cbm.delete_file(8, "OLDFILE.PRG")?;
     /// ```
-    pub fn delete_file(&self, device: u8, filename: &str) -> Result<(), CbmError> {
+    pub fn delete_file(&self, device: u8, filename: &AsciiString) -> Result<(), CbmError> {
         // Construct scratch command (S:filename)
         let cmd = format!("s0:{}", filename);
-        self.send_command(device, &cmd)?;
-
-        // Check status after delete
+        self.send_string_command_ascii(device, &cmd)?;
         self.get_status(device)?.into()
     }
 
@@ -677,22 +720,59 @@ impl Cbm {
     /// ```
     pub fn validate_disk(&self, device: u8) -> Result<(), CbmError> {
         // Send validate command (V)
-        self.send_command(device, "v")?;
+        self.send_command_petscii(device, &PetsciiString::from_ascii_str("v"))?;
 
         // Check status after validation
         self.get_status(device)?.into()
     }
 
-    fn error_untalk_and_close_file(cbm: &OpenCbm, device: u8, channel_num: u8) {
-        trace!("Cbm: Entered error_untalk_and_close_file");
-        let _ = cbm
+    fn error_untalk_and_close_file_locked(bus: &mut xum1541::Bus, device: u8, channel_num: u8) {
+        trace!("Cbm: Entered error_untalk_and_close_file_locked");
+        let _ = bus
             .untalk()
             .inspect_err(|_| debug!("Untalk failed {} {}", device, channel_num));
 
-        let _ = cbm
-            .close_file(device, channel_num)
+        let _ = Self::close_file_locked(bus, device, channel_num)
             .inspect_err(|_| debug!("Close file failed {} {}", device, channel_num));
-        trace!("Cbm: Exited error_untalk_and_close_file");
+        trace!("Cbm: Exited error_untalk_and_close_file_locked");
+    }
+
+    /// Open a file using an ASCII filename
+    pub fn open_file(
+        &self,
+        device: u8,
+        channel_num: u8,
+        filename: &AsciiString,
+    ) -> Result<(), CbmError> {
+        let mut guard = self.handle.lock();
+        let bus = guard
+            .as_mut()
+            .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
+
+        let petscii_name: PetsciiString = filename.into();
+
+        bus.open(device, channel_num)?;
+        bus.write(petscii_name.as_bytes()).inspect_err(|_| {
+            let _ = bus.close(device, channel_num);
+        })?;
+        bus.unlisten().map_err(|e| e.into())
+    }
+
+    pub fn close_file(&self, device: u8, channel_num: u8) -> Result<(), CbmError> {
+        let mut guard = self.handle.lock();
+        let bus = guard
+            .as_mut()
+            .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
+
+        Self::close_file_locked(bus, device, channel_num)
+    }
+
+    fn close_file_locked(
+        bus: &mut xum1541::Bus,
+        device: u8,
+        channel_num: u8,
+    ) -> Result<(), CbmError> {
+        bus.close(device, channel_num).map_err(|e| e.into())
     }
 
     /// Gets a directory listing from the device.
@@ -729,8 +809,9 @@ impl Cbm {
     /// }
     /// println!("Blocks free: {}", dir.blocks_free);
     /// ```
+    /// Get directory listing, converting filenames from PETSCII to ASCII
     pub fn dir(&self, device: u8, drive_num: Option<u8>) -> Result<CbmDirListing, CbmError> {
-        // Validate drive_num - must be None, Some(0) or Some(1)
+        // Validate drive_num
         if let Some(drive_num) = drive_num {
             if drive_num > 1 {
                 return Err(CbmError::InvalidOperation {
@@ -740,58 +821,72 @@ impl Cbm {
             }
         }
 
-        trace!("Lock cbm");
-        let guard = self.handle.lock();
-        let cbm = guard
-            .as_ref()
-            .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-
         // Construct directory command ("$" or "$0" or "$1")
-        let dir_cmd = match drive_num {
+        let filename = AsciiString::try_from(match drive_num {
             Some(num) => format!("${}", num),
             None => "$".to_string(),
-        };
-        trace!("Construct dir command {}", dir_cmd);
+        })
+        .map_err(|e| CbmError::InvalidOperation {
+            device,
+            message: e.to_string(),
+        })?;
 
-        trace!("Open file");
         let channel_num = 0;
-        cbm.open_file(device, channel_num, &dir_cmd)
+        self.open_file(device, channel_num, &filename)
             .map_err(|e| CbmError::DeviceError {
                 device,
-                message: format!("Failed to open directory {}: {}", dir_cmd, e),
+                message: format!("Failed to open directory {}: {}", filename, e),
             })?;
 
         let mut output = String::new();
 
         // Check that open succeeded
-        Self::get_status_already_locked(cbm, device).and_then(|status| {
-            if status.is_ok() != CbmErrorNumberOk::Ok {
-                Err(CbmError::CommandError {
-                    device,
-                    message: format!("Got error status after dir open {}", status),
-                })
-            } else {
-                debug!("status value after dir open {}", status);
-                Ok(())
+        match self.get_status(device) {
+            Ok(status) => {
+                if status.is_ok() != CbmErrorNumberOk::Ok {
+                    let _ = self.close_file(device, channel_num);
+                    return Err(CbmError::CommandError {
+                        device,
+                        message: format!("Got error status after dir open {}", status),
+                    });
+                } else {
+                    debug!("status value after dir open {}", status);
+                }
             }
-        })?;
+            Err(e) => {
+                let _ = self.close_file(device, channel_num);
+                return Err(CbmError::CommandError {
+                    device,
+                    message: format!("Failed to open directory: {}", e),
+                });
+            }
+        }
+
+        let mut guard = self.handle.lock();
+        let mut bus = guard
+            .as_mut()
+            .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
 
         // Read the directory data
-        cbm.talk(device, channel_num)
-            .inspect_err(|_| {
-                debug!("Talk command failed {} {}", device, channel_num);
-                let _ = cbm.close_file(device, channel_num);
-            })
-            .map_err(|e| CbmError::DeviceError {
-                device,
-                message: format!("Talk failed: {}", e),
-            })?;
+        match bus.talk(device, channel_num) {
+            Ok(_) => {}
+            Err(e) => {
+                let _ = Self::close_file_locked(bus, device, channel_num);
+                return Err(CbmError::DeviceError {
+                    device,
+                    message: format!("Talk failed: {}", e),
+                });
+            }
+        };
 
         // Skip the load address (first two bytes)
         trace!("Read 2 bytes");
-        let (_buf, result) = cbm
-            .raw_read(2)
-            .inspect_err(|_| Self::error_untalk_and_close_file(cbm, device, channel_num))
+        let buf = &mut [0u8; 2];
+        let result = bus
+            .read(buf, 2)
+            .inspect_err(|_| {
+                Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
+            })
             .map_err(|e| CbmError::DeviceError {
                 device,
                 message: format!("Failed to read load address: {}", e),
@@ -802,9 +897,12 @@ impl Cbm {
             loop {
                 trace!("In read loop");
                 // Read link address
-                let (_, count) = cbm
-                    .raw_read(2)
-                    .inspect_err(|_| Self::error_untalk_and_close_file(cbm, device, channel_num))
+                let buf = &mut [0u8; 2];
+                let count = bus
+                    .read(buf, 2)
+                    .inspect_err(|_| {
+                        Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
+                    })
                     .map_err(|e| CbmError::DeviceError {
                         device,
                         message: format!("Failed to read link address: {}", e),
@@ -815,9 +913,12 @@ impl Cbm {
                 }
 
                 // Read file size
-                let (size_buf, size_count) = cbm
-                    .raw_read(2)
-                    .inspect_err(|_| Self::error_untalk_and_close_file(cbm, device, channel_num))
+                let size_buf = &mut [0u8; 2];
+                let size_count = bus
+                    .read(size_buf, 2)
+                    .inspect_err(|_| {
+                        Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
+                    })
                     .map_err(|e| CbmError::DeviceError {
                         device,
                         message: format!("Failed to read file size: {}", e),
@@ -834,10 +935,11 @@ impl Cbm {
                 // Read filename characters until 0 byte
                 let mut filename = Vec::new();
                 loop {
-                    let (char_buf, char_count) = cbm
-                        .raw_read(1)
+                    let char_buf = &mut [0u8; 1];
+                    let char_count = bus
+                        .read(char_buf, 1)
                         .inspect_err(|_| {
-                            Self::error_untalk_and_close_file(cbm, device, channel_num)
+                            Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
                         })
                         .map_err(|e| CbmError::DeviceError {
                             device,
@@ -850,27 +952,31 @@ impl Cbm {
 
                     filename.push(char_buf[0]);
                 }
-                output.push_str(&petscii_to_ascii(&filename));
+                let petscii_filename = PetsciiString::from_petscii_bytes(&filename);
+                let ascii_filename: AsciiString = petscii_filename.into();
+                let str_filename = ascii_filename.to_string();
+                output.push_str(&str_filename);
                 output.push('\n');
             }
         }
 
         // Cleanup
-        cbm.untalk()
-            .inspect_err(|_| Self::error_untalk_and_close_file(cbm, device, channel_num))
+        bus.untalk()
+            .inspect_err(|_| {
+                Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
+            })
             .map_err(|e| CbmError::DeviceError {
                 device,
                 message: format!("Untalk failed: {}", e),
             })?;
 
-        cbm.close_file(device, 0)
-            .map_err(|e| CbmError::DeviceError {
-                device,
-                message: format!("Failed to close directory: {}", e),
-            })?;
+        Self::close_file_locked(bus, device, 0).map_err(|e| CbmError::DeviceError {
+            device,
+            message: format!("Failed to close directory: {}", e),
+        })?;
 
         // Get final status
-        let status = Self::get_status_already_locked(cbm, device)?;
+        let status = Self::get_status_already_locked(&mut bus, device)?;
         if status.is_ok() != CbmErrorNumberOk::Ok {
             return Err(status.into());
         }
@@ -888,6 +994,32 @@ impl Cbm {
         trace!("Dir success: {:?}", result);
 
         Ok(result)
+    }
+}
+
+impl Cbm {
+    fn get_status_already_locked(
+        bus: &mut xum1541::Bus,
+        device: u8,
+    ) -> Result<CbmStatus, CbmError> {
+        let mut buf = vec![0u8; 64];
+
+        // Put the drive into talk mode
+        bus.talk(device, 15)?;
+
+        // Read up to 256 bytes of data, stopping when we hit \r (or hit 64
+        // bytes). \r will be included if found
+        bus.read_until(&mut buf, 64, &vec![b'\r'])
+            .inspect_err(|_| {
+                let _ = bus.untalk();
+            })?;
+
+        // Tell the drive to stop talking
+        bus.untalk()?;
+
+        // Create the status from the buf
+        let status_str = String::from_utf8_lossy(&buf).to_string();
+        CbmStatus::new(&status_str, device)
     }
 }
 
@@ -1121,7 +1253,7 @@ impl CbmDriveUnit {
     /// ```
     pub fn send_init(
         &mut self,
-        cbm: Cbm,
+        cbm: &mut Cbm,
         ignore_errors: &Vec<CbmErrorNumber>,
     ) -> Result<Vec<CbmStatus>, CbmError> {
         self.busy = true;
@@ -1132,7 +1264,7 @@ impl CbmDriveUnit {
         catch_unwind(AssertUnwindSafe(|| {
             self.num_disk_drives_iter().try_for_each(|ii| {
                 let cmd = format!("i{}", ii);
-                cbm.send_command(self.device_number, &cmd)
+                cbm.send_string_command_ascii(self.device_number, &cmd)
                     .inspect_err(|_| self.busy = false)?;
                 let status = cbm
                     .get_status(self.device_number)
