@@ -171,7 +171,8 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// ```
     pub fn new() -> Result<Self, CbmError> {
-        let bus = xum1541::BusBuilder::new().build()?;
+        let mut bus = xum1541::BusBuilder::new().build()?;
+        bus.initialize()?;
 
         Ok(Self {
             handle: Arc::new(Mutex::new(Some(bus))),
