@@ -208,7 +208,8 @@ impl Cbm {
         drop(old_bus);
 
         // Create a new instance (can fail)
-        let new_bus = xum1541::BusBuilder::new().build()?;
+        let mut new_bus = xum1541::BusBuilder::new().build()?;
+        new_bus.initialize()?;
 
         // Set the stored handle to the new instance
         *handle = Some(new_bus);
