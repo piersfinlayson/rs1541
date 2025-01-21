@@ -171,6 +171,7 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// ```
     pub fn new() -> Result<Self, CbmError> {
+        trace!("Cbm::new");
         let mut bus = xum1541::BusBuilder::new().build()?;
         bus.initialize()?;
 
@@ -327,7 +328,7 @@ impl Cbm {
                 .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
 
             bus.talk(device, 15)?;
-            bus.read(&mut buf[i..i + 1], 1).inspect_err(|_| {
+            bus.read(&mut buf[i..i + 1]).inspect_err(|_| {
                 let _ = bus.untalk();
             })?;
             bus.untalk()?;
@@ -563,7 +564,7 @@ impl Cbm {
         let mut data = Vec::new();
         loop {
             let buf = &mut [0u8; 256];
-            let count = bus.read(buf, 256).map_err(|e| CbmError::FileError {
+            let count = bus.read(buf).map_err(|e| CbmError::FileError {
                 device,
                 message: format!("Read failed: {}", e),
             })?;
@@ -885,7 +886,7 @@ impl Cbm {
         trace!("Read 2 bytes");
         let buf = &mut [0u8; 2];
         let result = bus
-            .read(buf, 2)
+            .read(buf)
             .inspect_err(|_| {
                 Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
             })
@@ -901,7 +902,7 @@ impl Cbm {
                 // Read link address
                 let buf = &mut [0u8; 2];
                 let count = bus
-                    .read(buf, 2)
+                    .read(buf)
                     .inspect_err(|_| {
                         Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
                     })
@@ -917,7 +918,7 @@ impl Cbm {
                 // Read file size
                 let size_buf = &mut [0u8; 2];
                 let size_count = bus
-                    .read(size_buf, 2)
+                    .read(size_buf)
                     .inspect_err(|_| {
                         Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
                     })
@@ -939,7 +940,7 @@ impl Cbm {
                 loop {
                     let char_buf = &mut [0u8; 1];
                     let char_count = bus
-                        .read(char_buf, 1)
+                        .read(char_buf)
                         .inspect_err(|_| {
                             Self::error_untalk_and_close_file_locked(&mut bus, device, channel_num)
                         })
@@ -1004,15 +1005,22 @@ impl Cbm {
         bus: &mut xum1541::Bus,
         device: u8,
     ) -> Result<CbmStatus, CbmError> {
-        let mut buf = vec![0u8; 64];
+        trace!("Cbm::get_status_already_locked");
+        trace!("device: {}", device);
+
+
+        bus.reset()?;
 
         // Put the drive into talk mode
         bus.talk(device, 15)?;
 
-        // Read up to 256 bytes of data, stopping when we hit \r (or hit 64
+        // Read up to 64 bytes of data, stopping when we hit \r (or hit 64
         // bytes). \r will be included if found
-        bus.read_until(&mut buf, 64, &vec![b'\r'])
-            .inspect_err(|_| {
+        let mut buf = vec![0u8; 64];
+        let pattern = vec![b'\r'];
+        let bytes_read = bus.read_until(&mut buf, &pattern)
+            .inspect_err(|e| {
+                debug!("Hit error while in read_until() loop: {}", e);
                 let _ = bus.untalk();
             })?;
 
@@ -1020,7 +1028,7 @@ impl Cbm {
         bus.untalk()?;
 
         // Create the status from the buf
-        let status_str = String::from_utf8_lossy(&buf).to_string();
+        let status_str = String::from_utf8_lossy(&buf[..bytes_read]).to_string();
         CbmStatus::new(&status_str, device)
     }
 }

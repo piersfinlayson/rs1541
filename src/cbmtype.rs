@@ -88,13 +88,13 @@ impl From<xum1541::Error> for CbmError {
                 device: 0,
                 message: format!("XUM1541 device {vid:04x}/{pid:04x} found, but non-matching serial numbers. Found {actual:?}, was looking for {expected}", vid=vid, pid=pid, actual=actual, expected=expected),
             },
-            Xum1541Error::SizeTooLarge { attempt, max } => CbmError::DeviceError {
+            Xum1541Error::InvalidArgs { message } => CbmError::DeviceError {
                 device: 0,
-                message: format!("Calling code attempted to read or write too many bytes {attempt} vs max {max}", attempt=attempt, max=max),
+                message,
             },
-            Xum1541Error::SizeTooSmall { attempt, min } => CbmError::DeviceError {
+            Xum1541Error::DeviceInfoError { message } => CbmError::DeviceError {
                 device: 0,
-                message: format!("Calling code attempted to read or write too few bytes {attempt} vs max {min}", attempt=attempt, min=min),
+                message: format!("Unexpecte error message from xum1541::Bus: {}", message),
             },
             Xum1541Error::InternalError{ message } => CbmError::DeviceError {
                 device: 0,

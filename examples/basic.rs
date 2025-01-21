@@ -42,6 +42,9 @@
 
 use rs1541::{Cbm, CbmError};
 fn main() -> Result<(), CbmError> {
+    env_logger::init();
+    log::info!("Started logging");
+
     // Driver automatically opens on creation and closes on drop
     let cbm = Cbm::new()?;
 

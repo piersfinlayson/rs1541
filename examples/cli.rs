@@ -29,7 +29,7 @@ fn main() -> Result<(), CbmError> {
         })
         .init();
 
-    info!("OpenCBM Test Application");
+    info!("rs1541 Test Application");
 
     // Create CBM interface
     let mut cbm = Cbm::new()?;
