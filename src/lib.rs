@@ -73,6 +73,9 @@ pub use string::{AsciiString, CbmString, PetsciiString};
 pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, petscii_to_ascii};
 pub use validate::{validate_device, DeviceValidation};
 
+// Export DeviceChannel as we use in our API
+pub use xum1541::buscmd::DeviceChannel;
+
 /// Minimum device number supported by Commodore disk drives
 pub const MIN_DEVICE_NUM: u8 = 8;
 
