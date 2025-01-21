@@ -50,18 +50,23 @@
 //! All operations that could fail return a [`Result`] type. Specific error
 //! conditions are represented by the [`CbmError`] type, which wraps both
 //! OpenCBM errors and drive-specific error codes.
+
+/// Define rs1541 modules
 pub mod cbm;
 pub mod cbmtype;
 pub mod string;
 pub mod util;
 pub mod validate;
+pub mod error;
 
+/// Export the public API
+pub use error::CbmError;
 pub use cbm::{
     Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose, CbmDirListing, CbmDiskHeader,
     CbmDriveUnit, CbmFileEntry,
 };
 pub use cbmtype::{
-    CbmDeviceInfo, CbmDeviceType, CbmError, CbmErrorNumber, CbmErrorNumberOk, CbmFileMode,
+    CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmFileMode,
     CbmFileType, CbmOperation, CbmOperationType, CbmStatus,
 };
 pub use string::{CbmString, AsciiString, PetsciiString};

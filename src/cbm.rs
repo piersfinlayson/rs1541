@@ -106,11 +106,9 @@
 //! - Some advanced 1571/1581 features may not be supported
 //! - Drive/DOS commands are limited to standard CBM DOS operations
 //!
-pub use crate::cbmtype::CbmDeviceInfo;
-use crate::cbmtype::{
-    CbmDeviceType, CbmError, CbmErrorNumber, CbmErrorNumberOk, CbmFileType, CbmStatus,
+use crate::{
+    CbmError, CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmFileType, CbmStatus, CbmString, AsciiString, PetsciiString
 };
-use crate::{CbmString, AsciiString, PetsciiString};
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};

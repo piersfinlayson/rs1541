@@ -38,10 +38,9 @@ rs1541 = "0.1"
 
 Replace the contents of main.rs with:
 ```rust
-use rs1541::Cbm;
-use std::error::Error;
+use rs1541::{Cbm, CbmError};
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), CbmError> {
     // Driver automatically opens on creation and closes on drop
     let cbm = Cbm::new()?;
 

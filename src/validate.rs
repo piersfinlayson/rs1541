@@ -1,6 +1,6 @@
 use log::debug;
 
-use crate::cbmtype::CbmError;
+use crate::CbmError;
 use crate::{DEFAULT_DEVICE_NUM, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
 
 pub enum DeviceValidation {
