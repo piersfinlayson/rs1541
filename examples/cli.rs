@@ -27,6 +27,7 @@ fn main() -> Result<(), CbmError> {
             2 => LevelFilter::Debug,
             _ => LevelFilter::Trace,
         })
+        .filter_module("rustyline", LevelFilter::Error) // Disable rustline logging
         .init();
 
     info!("rs1541 Test Application");
@@ -40,7 +41,7 @@ fn main() -> Result<(), CbmError> {
     })?;
 
     loop {
-        let readline = rl.readline("test_opencbm> ");
+        let readline = rl.readline("rs1541-cli> ");
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())
@@ -165,17 +166,19 @@ fn main() -> Result<(), CbmError> {
 
                     "help" | "h" | "?" => {
                         println!("Available commands:");
-                        println!("  i|id|identify       - Get device info");
-                        println!("  s|status            - Get device status");
-                        println!("  d|dir [0|1]         - List directory (optional drive number)");
-                        println!("  r|b|reset           - Reset the IEC bus");
-                        println!("  u|usbreset          - Reset the USB device");
-                        println!("  c|command <cmd>     - Send command to device");
-                        println!("  f|ormat <name> <id> - Format disk");
-                        println!("  p|print             - Print config");
-                        println!("  n|num 8-15          - Change device number");
-                        println!("  h|?|help            - Show this help");
-                        println!("  q|x|quit|exit       - Exit program");
+                        println!("  i|id|identify         - Get device info");
+                        println!("  s|status              - Get device status");
+                        println!(
+                            "  d|dir [0|1]           - List directory (optional drive number)"
+                        );
+                        println!("  r|b|reset             - Reset the IEC bus");
+                        println!("  u|usbreset            - Reset the USB device");
+                        println!("  c|command <cmd>       - Send command to device");
+                        println!("  f|format <name> <id>  - Format disk");
+                        println!("  p|print               - Print config");
+                        println!("  n|num 8-15            - Change device number");
+                        println!("  h|?|help              - Show this help");
+                        println!("  q|x|quit|exit         - Exit program");
                     }
 
                     _ => println!("Unknown command. Type 'help' for available commands."),

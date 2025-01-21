@@ -12,3 +12,5 @@ So at least two problems
 also should pass in mut bufs to all read functions
 
 Make memory_read/write functions handle both DOS 1 and DOS 2.  The cutoff where it's worthwhile to see if the device is DOS 1 is around 4-8 bytes (as 5 bytes need to be written just to read/write each 1 with DOS 1 mechanism)
+
+Test my 2031 and 1540 differentiation code

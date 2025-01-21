@@ -119,13 +119,7 @@ impl CbmStatus {
     /// Useful for checking drive gave us any valid response
     /// This means it's working even if the disk isn't inserted, is corrupt, etc
     pub fn is_valid_cbm(&self) -> bool {
-        if self.error_number != CbmErrorNumber::OpenCbm
-            && self.error_number != CbmErrorNumber::Unknown
-        {
-            true
-        } else {
-            false
-        }
+        self.error_number != CbmErrorNumber::Unknown
     }
 
     pub fn track(&self) -> Option<u8> {
@@ -217,7 +211,16 @@ impl CbmDeviceInfo {
     pub fn from_magic(magic: u16, magic2: Option<u16>) -> Self {
         let (device_type, description) = match magic {
             0xfeb6 => (CbmDeviceType::Cbm2031, String::from("2031")),
-            0xaaaa => (CbmDeviceType::Cbm1541, String::from("1540 or 1541")),
+            0xaaaa => {
+                match magic2 {
+                    Some(magic2) => match magic2 {
+                        0x3156 => (CbmDeviceType::Cbm1540, String::from("1540")),
+                        0xfeb6 => (CbmDeviceType::Cbm2031, String::from("2031")),
+                        _ => (CbmDeviceType::Cbm1541, String::from("1541")),
+                    },
+                    None => (CbmDeviceType::Cbm1541, String::from("1541")),
+                }
+            },
             0xf00f => (CbmDeviceType::Cbm1541, String::from("1541-II")),
             0xcd18 => (CbmDeviceType::Cbm1541, String::from("1541C")),
             0x10ca => (CbmDeviceType::Cbm1541, String::from("DolphinDOS 1541")),
@@ -264,19 +267,20 @@ impl CbmDeviceInfo {
 #[serde(into = "i32", from = "i32")]
 pub enum CbmDeviceType {
     Unknown = -1,
-    Cbm1541 = 0,
-    Cbm1570 = 1,
-    Cbm1571 = 2,
-    Cbm1581 = 3,
-    Cbm2040 = 4,
-    Cbm2031 = 5,
-    Cbm3040 = 6,
-    Cbm4040 = 7,
-    Cbm4031 = 8,
-    Cbm8050 = 9,
-    Cbm8250 = 10,
-    Sfd1001 = 11,
-    FdX000 = 12,
+    Cbm1540 = 0,
+    Cbm1541 = 1,
+    Cbm1570 = 2,
+    Cbm1571 = 3,
+    Cbm1581 = 4,
+    Cbm2040 = 5,
+    Cbm2031 = 6,
+    Cbm3040 = 7,
+    Cbm4040 = 8,
+    Cbm4031 = 9,
+    Cbm8050 = 10,
+    Cbm8250 = 11,
+    Sfd1001 = 12,
+    FdX000 = 13,
 }
 
 impl Default for CbmDeviceType {
@@ -289,6 +293,7 @@ impl fmt::Display for CbmDeviceType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CbmDeviceType::Unknown => write!(f, "Unknown"),
+            CbmDeviceType::Cbm1540 => write!(f, "CBM 1540"),
             CbmDeviceType::Cbm1541 => write!(f, "CBM 1541"),
             CbmDeviceType::Cbm1570 => write!(f, "CBM 1570"),
             CbmDeviceType::Cbm1571 => write!(f, "CBM 1571"),
@@ -311,18 +316,19 @@ impl From<i32> for CbmDeviceType {
         match value {
             -1 => Self::Unknown,
             0 => Self::Cbm1541,
-            1 => Self::Cbm1570,
-            2 => Self::Cbm1571,
-            3 => Self::Cbm1581,
-            4 => Self::Cbm2040,
-            5 => Self::Cbm2031,
-            6 => Self::Cbm3040,
-            7 => Self::Cbm4040,
-            8 => Self::Cbm4031,
-            9 => Self::Cbm8050,
-            10 => Self::Cbm8250,
-            11 => Self::Sfd1001,
-            12 => Self::FdX000,
+            1 => Self::Cbm1541,
+            2 => Self::Cbm1570,
+            3 => Self::Cbm1571,
+            4 => Self::Cbm1581,
+            5 => Self::Cbm2040,
+            6 => Self::Cbm2031,
+            7 => Self::Cbm3040,
+            8 => Self::Cbm4040,
+            9 => Self::Cbm4031,
+            10 => Self::Cbm8050,
+            11 => Self::Cbm8250,
+            12 => Self::Sfd1001,
+            13 => Self::FdX000,
             _ => Self::Unknown,
         }
     }
@@ -346,6 +352,7 @@ impl CbmDeviceType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Unknown => "Unknown Device",
+            Self::Cbm1540 => "1540",
             Self::Cbm1541 => "1541",
             Self::Cbm1570 => "1570",
             Self::Cbm1571 => "1571",
@@ -365,6 +372,7 @@ impl CbmDeviceType {
     pub fn num_disk_drives(&self) -> u8 {
         match self {
             Self::Unknown => 0,
+            Self::Cbm1540 => 1,
             Self::Cbm1541 => 1,
             Self::Cbm1570 => 1,
             Self::Cbm1571 => 1,
@@ -418,7 +426,6 @@ pub enum CbmErrorNumber {
     DiskFull = 72,
     DosMismatch = 73,
     DriveNotReady = 74,
-    OpenCbm = 99,
     Unknown = 255,
 }
 
@@ -465,7 +472,6 @@ impl From<u8> for CbmErrorNumber {
             72 => Self::DiskFull,
             73 => Self::DosMismatch,
             74 => Self::DriveNotReady,
-            99 => Self::OpenCbm,
             _ => Self::Unknown,
         }
     }
@@ -514,7 +520,6 @@ impl fmt::Display for CbmErrorNumber {
             CbmErrorNumber::DiskFull => "DISK FULL",
             CbmErrorNumber::DosMismatch => "DOS MISMATCH",
             CbmErrorNumber::DriveNotReady => "DRIVE NOT READY",
-            CbmErrorNumber::OpenCbm => "opencbm error",
             CbmErrorNumber::Unknown => "unknown",
         };
         write!(f, "{}", s)
@@ -526,70 +531,6 @@ pub enum CbmErrorNumberOk {
     Ok,
     Err,
     Number73,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CbmFileType {
-    PRG,
-    SEQ,
-    USR,
-    REL,
-    Unknown,
-}
-
-impl CbmFileType {
-    fn _to_suffix(&self) -> &'static str {
-        match self {
-            CbmFileType::PRG => ",P",
-            CbmFileType::SEQ => ",S",
-            CbmFileType::USR => ",U",
-            CbmFileType::REL => ",R",
-            CbmFileType::Unknown => "",
-        }
-    }
-}
-
-impl fmt::Display for CbmFileType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let output = match self {
-            CbmFileType::PRG => "prg",
-            CbmFileType::SEQ => "seq",
-            CbmFileType::USR => "usr",
-            CbmFileType::REL => "rel",
-            CbmFileType::Unknown => "",
-        };
-        write!(f, "{}", output)?;
-        Ok(())
-    }
-}
-
-impl From<&str> for CbmFileType {
-    fn from(s: &str) -> Self {
-        match s.to_uppercase().as_str() {
-            "PRG" => CbmFileType::PRG,
-            "SEQ" => CbmFileType::SEQ,
-            "USR" => CbmFileType::USR,
-            "REL" => CbmFileType::REL,
-            _ => CbmFileType::Unknown,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CbmFileMode {
-    Read,
-    Write,
-    Append,
-}
-
-impl CbmFileMode {
-    fn _to_suffix(&self) -> &'static str {
-        match self {
-            CbmFileMode::Read => "",
-            CbmFileMode::Write => ",W",
-            CbmFileMode::Append => ",A",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

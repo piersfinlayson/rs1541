@@ -1,15 +1,14 @@
 //! # rs1541
 //!
-//! Rust bindings and helper functions for accessing Commodore disk drives through OpenCBM.
+//! Rust bindings and helper functions for accessing Commodore disk drives.
 //!
 //! ## Overview
-//! This crate provides idiomatic Rust interfaces to OpenCBM, allowing easy control of
+//! This crate provides idiomatic Rust interfaces allowing easy control of
 //! Commodore disk drives (like the 1541) using modern USB devices such as the XUM1541.
-//! Thread-safe access to OpenCBM through protected mutex handles enables safe usage in
+//! Thread-safe access is provided through protected mutex handles enables safe usage in
 //! multi-threaded and async applications.
 //!
 //! ## Features
-//! * Safe Rust wrappers around OpenCBM's C interface
 //! * RAII-based driver management - no manual open/close needed
 //! * Thread-safe access for multi-threaded and async applications
 //! * Ergonomic error handling using Rust's Result type
@@ -42,31 +41,30 @@
 //! ```
 //!
 //! ## Requirements
-//! * OpenCBM installed and configured
+//! * Rust installed on your system
 //! * XUM1541 (or compatible) USB device
 //! * Appropriate permissions to access the USB device
 //!
 //! ## Error Handling
 //! All operations that could fail return a [`Result`] type. Specific error
 //! conditions are represented by the [`CbmError`] type, which wraps both
-//! OpenCBM errors and drive-specific error codes.
+//! XUM1541 errors and drive-specific error codes.
 
-/// Define rs1541 modules
+// Define rs1541 modules
 pub mod cbm;
 pub mod cbmtype;
+pub mod disk;
 pub mod error;
 pub mod string;
 pub mod util;
 pub mod validate;
 
-pub use cbm::{
-    Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose, CbmDirListing, CbmDiskHeader,
-    CbmDriveUnit, CbmFileEntry,
-};
+pub use cbm::{Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose};
 pub use cbmtype::{
-    CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmFileMode, CbmFileType,
-    CbmOperation, CbmOperationType, CbmStatus,
+    CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmOperation, CbmOperationType,
+    CbmStatus,
 };
+pub use disk::{CbmDirListing, CbmDiskHeader, CbmFileEntry, CbmFileMode, CbmFileType};
 /// Export the public API
 pub use error::CbmError;
 pub use string::{AsciiString, CbmString, PetsciiString};

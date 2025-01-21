@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.0] - 2025-01-??
 ### Changed
 - Improved opencbm binding build checking
-- Moved away from opencbm bindings to rust native xum1541
+- Moved away from opencbm bindings to A Rust native xum1541 implementation (xum1541)
 
 ## [0.1.1] - 2025-01-18
 ### Added

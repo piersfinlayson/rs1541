@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use log::{debug, error, info, trace, warn};
 use std::convert::TryFrom;
 use std::fmt;
 
@@ -5,6 +7,15 @@ use std::fmt;
 pub enum CbmString {
     Ascii(AsciiString),
     Petscii(PetsciiString),
+}
+
+impl fmt::Display for CbmString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CbmString::Ascii(ascii) => write!(f, "{}", ascii),
+            CbmString::Petscii(petscii) => write!(f, "{}", petscii),
+        }
+    }
 }
 
 impl CbmString {
@@ -107,11 +118,13 @@ impl AsciiString {
 
     /// Convert to a PetsciiString
     pub fn to_petscii(&self) -> PetsciiString {
+        trace!("Converting ASCII to PETSCII - starting with {}", self);
         let converted: Vec<u8> = self
             .0
             .iter()
             .map(|&c| ascii_to_petscii(c as char))
             .collect();
+        trace!("Ending with {:?}", converted);
         PetsciiString(converted)
     }
 
@@ -130,7 +143,7 @@ impl AsciiString {
 // Implement Display for both string types
 impl fmt::Display for PetsciiString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_ascii())
+        write!(f, "{:?}", self)
     }
 }
 
@@ -267,34 +280,25 @@ impl TryFrom<&str> for AsciiString {
     }
 }
 
-// The core conversion functions, now marked private
 fn petscii_to_ascii(character: u8) -> char {
     match character {
         0x0a | 0x0d => '\n',
-        0x40 | 0x60 => character as char,
-        0xa0 | 0xe0 => ' ', // CBM: Shifted Space
-        _ => match character & 0xe0 {
-            0x40 | 0x60 => (character ^ 0x20) as char,
-            0xc0 => (character ^ 0x80) as char,
-            _ => {
-                if character.is_ascii() && (character as char).is_ascii_graphic() {
-                    character as char
-                } else {
-                    '.'
-                }
-            }
-        },
+        0x00..=0x09 | 0x0b..=0x0c | 0x0e..=0x1f => '.', // Control chars except newlines
+        0x20..=0x40 => character as char,               // Space and symbols
+        0x41..=0x5A => (character | 0x20) as char,      // PETSCII uppercase to ASCII lowercase
+        0x5B..=0x7F => character as char,               // Other symbols
+        0x80..=0xC0 => '.',                             // Graphics chars
+        0xC1..=0xDA => (character ^ 0x80) as char,      // Graphics letters to ASCII uppercase
+        0xDB..=0xFF => '.',                             // More graphics
     }
 }
 
 fn ascii_to_petscii(character: char) -> u8 {
     let c = character as u8;
-    if (0x5b..=0x7e).contains(&c) {
-        c ^ 0x20
-    } else if character.is_ascii_uppercase() {
-        c | 0x80
-    } else {
-        c
+    match c {
+        0x5b..=0x7e => c ^ 0x20,
+        0x41..=0x5A => c | 0x80,
+        _ => c,
     }
 }
 
@@ -322,7 +326,10 @@ mod tests {
         let petscii = ascii.to_petscii();
 
         assert_eq!(&format!("{}", ascii), "Hello");
-        assert_eq!(&format!("{}", petscii), "Hello");
+        assert_eq!(
+            &format!("{}", petscii),
+            "PetsciiString([200, 69, 76, 76, 79])"
+        );
     }
 
     #[test]

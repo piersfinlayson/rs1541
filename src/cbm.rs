@@ -1,6 +1,6 @@
-//! A Rust interface for interacting with Commodore disk drives via OpenCBM
+//! A Rust interface for interacting with Commodore disk drives.
 //!
-//! This module provides a safe, idiomatic Rust wrapper around the OpenCBM library,
+//! This module provides a wrapper around the xum1541 library,
 //! allowing modern systems to interact with Commodore disk drives (like the 1541)
 //! through XUM1541-compatible USB adapters.
 //!
@@ -24,7 +24,7 @@
 //! The module is designed with safety and thread-safety in mind:
 //!
 //! - All operations that could fail return [`Result`]s with detailed error types
-//! - The OpenCBM handle is protected by a mutex to allow safe multi-threaded access
+//! - The xum1541 handle is protected by a mutex to allow safe multi-threaded access
 //! - Channel allocation is managed to prevent conflicts and ensure proper cleanup
 //!
 //! # Example Usage
@@ -107,8 +107,8 @@
 //! - Drive/DOS commands are limited to standard CBM DOS operations
 //!
 use crate::{
-    AsciiString, CbmDeviceInfo, CbmDeviceType, CbmError, CbmErrorNumber, CbmErrorNumberOk,
-    CbmFileType, CbmStatus, CbmString, PetsciiString,
+    AsciiString, CbmDeviceInfo, CbmDeviceType, CbmDirListing, CbmError, CbmErrorNumber,
+    CbmErrorNumberOk, CbmStatus, CbmString, PetsciiString,
 };
 
 #[allow(unused_imports)]
@@ -122,15 +122,15 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-/// The main interface for interacting with Commodore disk drives via OpenCBM.
+/// The main interface for interacting with Commodore disk drives via an XUM1541.
 ///
-/// `Cbm` provides a safe, high-level interface to communicate with Commodore disk drives
-/// through the OpenCBM library. It manages the driver connection and provides methods
+/// `Cbm` provides a high-level interface to communicate with Commodore disk drives
+/// through the xum1541 crate. It manages the driver connection and provides methods
 /// for common disk operations like reading files, writing files, and getting directory
 /// listings.
 ///
 /// The struct uses interior mutability (via `Arc<Mutex<>>`) to allow safe concurrent
-/// access to the OpenCBM driver while maintaining a clean API that doesn't require
+/// access to the XUM1541 driver while maintaining a clean API that doesn't require
 /// explicit locking by the user.
 ///
 /// # Example
@@ -156,13 +156,13 @@ pub struct Cbm {
 impl Cbm {
     /// Creates a new CBM instance and opens the XUM1541 driver.
     ///
-    /// This function attempts to initialize communication with the OpenCBM driver
+    /// This function attempts to initialize communication with the XUM1541 driver
     /// and returns a wrapped handle that can be used for further operations.
     ///
     /// # Errors
     ///
     /// Returns `CbmError` if:
-    /// - The OpenCBM driver cannot be opened
+    /// - The driver cannot be opened
     /// - No XUM1541 device is connected
     /// - The device is in use by another process
     ///
@@ -239,12 +239,12 @@ impl Cbm {
     pub fn reset_bus(&self) -> Result<(), CbmError> {
         self.handle
             .lock()
-            .as_mut() // Convert Option<OpenCbm> to Option<&OpenCbm>
+            .as_mut()
             .ok_or(CbmError::UsbError(
                 // Convert None to Err
                 "No CBM handle".to_string(),
             ))? // Propagate error if None
-            .reset() // Call reset() on the OpenCbm
+            .reset()
             .map_err(|e| CbmError::DeviceError {
                 device: 0,
                 message: e.to_string(),
@@ -286,24 +286,33 @@ impl Cbm {
         let magic: u16 = ((buf[1] as u16) << 8) | (buf[0] as u16);
 
         // Need to do some extra work for some drives
-        let (magic, magic2) = match magic {
+        let magic2 = match magic {
             0xaaaa => {
-                // Replace magic - not quite sure which drives this
-                // differentiates between
+                // 1540 and 1541 variants
                 let mut buf = [0u8; 2];
                 self.read_drive_memory(device, 0xfffe, &mut buf)?;
-                let magic: u16 = ((buf[1] as u16) << 8) | (buf[0] as u16);
-                (magic, None)
+                if buf[0] != 0x67 || buf[1] != 0xFE {
+                    Some(((buf[1] as u16) << 8) | (buf[0] as u16))
+                } else {
+                    // Read another 2 bytes in order to diffentiate between
+                    // the 1540 and 1541.  The 1540 has 0x56 then 0x31 at
+                    // 0xE5C4 (V1 in ascii) and the 1541 has 0x31 then 0x35
+                    // for 15 (both short for V170 and 1541 - the firmware
+                    // version string exposed in status after reset)
+                    //implement
+                    let mut buf = [0u8; 2];
+                    self.read_drive_memory(device, 0xe5c4, &mut buf)?;
+                    Some(((buf[1] as u16) << 8) | (buf[0] as u16))
+                }
             }
             0x01ba => {
-                // Leave magic as is, and add a second magic, to differentiate
-                // between 1581 and FDX000 drives
+                // 1581 and FDX000 (3.5" drives)
                 let mut buf = [0u8; 2];
                 self.read_drive_memory(device, 0xfffe, &mut buf)?;
                 let magic2: u16 = ((buf[1] as u16) << 8) | (buf[0] as u16);
-                (magic, Some(magic2))
+                Some(magic2)
             }
-            _ => (magic, None),
+            _ => None,
         };
 
         // Generate the device type from the magic number(s)
@@ -407,6 +416,8 @@ impl Cbm {
         let mut output = String::new();
 
         // Check that open succeeded
+        // TODO too much code to check the open succeeded!
+        // Maybe put in open_file?
         match self.get_status(device) {
             Ok(status) => {
                 if status.is_ok() != CbmErrorNumberOk::Ok {
@@ -445,6 +456,7 @@ impl Cbm {
             }
         };
 
+        // TO DO this is awfully long as well - make more readable
         // Skip the load address (first two bytes)
         trace!("Read 2 bytes");
         let buf = &mut [0u8; 2];
@@ -537,19 +549,7 @@ impl Cbm {
             return Err(status.into());
         }
 
-        let result = if let Ok(directory) = CbmDirListing::parse(&output) {
-            // Directory is now parsed into a structured format
-            Ok(directory)
-        } else {
-            Err(CbmError::DeviceError {
-                device,
-                message: "Failed to parse directory listing".to_string(),
-            })
-        }?;
-
-        trace!("Dir success: {:?}", result);
-
-        Ok(result)
+        CbmDirListing::parse(&output)
     }
 
     /// Validates the disk contents.
@@ -651,6 +651,7 @@ impl Cbm {
         // Construct format command (N:name,id)
         let cmd = format!("n0:{},{}", name, id);
 
+        trace!("Send format command in ascii {}", cmd);
         self.send_string_command_ascii(device, &cmd)?;
         self.get_status(device)
     }
@@ -757,6 +758,7 @@ impl Cbm {
     /// Send a command on a specific drive
     /// The command must be provided as a PetsciiString
     pub fn send_command_petscii(&self, device: u8, cmd: &PetsciiString) -> Result<(), CbmError> {
+        trace!("Cbm::send_command_petscii device {device} cmd {cmd}");
         let dc = DeviceChannel::new(device, 15)?;
 
         let mut guard = self.handle.lock();
@@ -773,7 +775,9 @@ impl Cbm {
 
     /// Sends a command string to a device after converting from ASCII to PETSCII
     pub fn send_command_ascii(&self, device: u8, command: &AsciiString) -> Result<(), CbmError> {
-        self.send_command_petscii(device, &command.into())
+        let petscii: PetsciiString = command.into();
+        trace!("Send string command in petscii {}", petscii);
+        self.send_command_petscii(device, &petscii)
     }
 
     /// Sends a string command to a device, converting from ASCII to PETSCII.
@@ -788,6 +792,7 @@ impl Cbm {
             device,
             message: e.to_string(),
         })?;
+        trace!("Send string command in ascii {}", ascii);
         self.send_command_ascii(device, &ascii)
     }
 
@@ -1081,10 +1086,7 @@ impl Cbm {
         bus: &mut xum1541::Bus,
         device: u8,
     ) -> Result<CbmStatus, CbmError> {
-        trace!("Cbm::get_status_already_locked");
-        trace!("device: {}", device);
-
-        bus.reset()?;
+        trace!("Cbm::get_status_already_locked device: {device}");
 
         // Put the drive into talk mode
         let dc = DeviceChannel::new(device, 15)?;
@@ -1447,369 +1449,5 @@ impl CbmDriveUnit {
     /// ```
     pub fn is_busy(&self) -> bool {
         self.busy
-    }
-}
-
-/// Represents an entry in a Commodore disk directory.
-///
-/// This enum handles both valid and invalid directory entries. Valid entries contain
-/// complete file information including size, name, and type. Invalid entries retain
-/// as much information as could be parsed along with error details, allowing for
-/// diagnostic and recovery operations.
-///
-/// Directory entries on Commodore drives follow a specific format:
-/// ```text
-/// BLOCKS   "FILENAME"   TYPE   
-///    10    "MYFILE"    PRG
-/// ```
-///
-/// # Examples
-///
-/// ```ignore
-/// match file_entry {
-///     CbmFileEntry::ValidFile { blocks, filename, file_type } => {
-///         println!("{} blocks: {} ({})", blocks, filename, file_type);
-///     },
-///     CbmFileEntry::InvalidFile { raw_line, error, .. } => {
-///         println!("Error parsing entry: {} - {}", raw_line, error);
-///     }
-/// }
-/// ```
-#[derive(Debug)]
-pub enum CbmFileEntry {
-    /// Represents a successfully parsed directory entry.
-    ///
-    /// Contains all information about a file as stored in the directory.
-    ///
-    /// # Fields
-    ///
-    /// * `blocks` - Size of the file in disk blocks (1 block = 254 bytes of user data)
-    /// * `filename` - Name of the file as stored on disk (may include shifted characters)
-    /// * `file_type` - Type of the file (PRG, SEQ, USR, etc.)
-    ValidFile {
-        blocks: u16,
-        filename: String,
-        file_type: CbmFileType,
-    },
-    /// Represents a directory entry that could not be fully parsed.
-    ///
-    /// This variant retains the raw directory line and any partial information
-    /// that could be extracted, along with details about what went wrong during parsing.
-    ///
-    /// # Fields
-    ///
-    /// * `raw_line` - The original directory line that failed to parse
-    /// * `error` - Description of what went wrong during parsing
-    /// * `partial_blocks` - Block count if it could be parsed
-    /// * `partial_filename` - Filename if it could be parsed
-    InvalidFile {
-        raw_line: String,
-        error: String,                    // Description of what went wrong
-        partial_blocks: Option<u16>,      // In case we at least got the blocks
-        partial_filename: Option<String>, // In case we at least got the filename
-    },
-}
-
-impl fmt::Display for CbmFileEntry {
-    /// Formats the file entry for display.
-    ///
-    /// # Format
-    ///
-    /// For valid files:
-    /// - Shows filename with type suffix (e.g., "PROGRAM.PRG")
-    /// - Shows block count right-aligned
-    /// - Pads with spaces to align multiple entries
-    ///
-    /// For invalid files:
-    /// - Shows the error message
-    /// - Includes any partial information that was successfully parsed
-    /// - Includes the raw directory line for debugging
-    ///
-    /// # Examples
-    ///
-    /// Valid file:
-    /// ```text
-    /// Filename: "MYPROG.PRG"          Blocks: 10
-    /// ```
-    ///
-    /// Invalid file:
-    /// ```text
-    /// Invalid entry: "   10  MYPROG*" (Invalid character in filename) [Blocks: 10]
-    /// ```
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CbmFileEntry::ValidFile {
-                blocks,
-                filename,
-                file_type,
-            } => {
-                write!(
-                    f,
-                    "Filename: \"{}.{}\"{:width$}Blocks: {:>3}",
-                    filename,
-                    file_type,
-                    "", // empty string for padding
-                    blocks,
-                    width = 25 - (filename.len() + 3 + 1) // +1 for the dot, +3 for suffix
-                )
-            }
-            CbmFileEntry::InvalidFile {
-                raw_line,
-                error,
-                partial_blocks,
-                partial_filename,
-            } => {
-                write!(f, "Invalid entry: {} ({})", raw_line, error)?;
-                if let Some(filename) = partial_filename {
-                    write!(f, " [Filename: \"{}\"]", filename)?;
-                }
-                if let Some(blocks) = partial_blocks {
-                    write!(f, " [Blocks: {}]", blocks)?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct CbmDiskHeader {
-    drive_number: u8,
-    name: String,
-    id: String,
-}
-
-/// Common disk header constants
-impl CbmDiskHeader {
-    /// Maximum length of a disk name (16 characters)
-    pub const MAX_NAME_LENGTH: usize = 16;
-
-    /// Required length of a disk ID (2 characters)
-    pub const ID_LENGTH: usize = 2;
-}
-
-impl fmt::Display for CbmDiskHeader {
-    /// Formats the disk header for display.
-    ///
-    /// Produces output in the format:
-    /// ```text
-    /// Drive 0 Header: "MY DISK" ID: 01
-    /// ```
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// let header = CbmDiskHeader::parse_header("0 .\"MY DISK     01\"")?;
-    /// println!("{}", header); // "Drive 0 Header: "MY DISK" ID: 01"
-    /// ```
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Drive {} Header: \"{}\" ID: {}",
-            self.drive_number, self.name, self.id
-        )
-    }
-}
-
-/// Represents the header information of a Commodore disk.
-///
-/// The disk header on Commodore drives contains metadata about the disk, including
-/// its name, ID, and which drive it was formatted in. This information appears at
-/// the start of every directory listing in a specific format:
-///
-/// ```text
-/// "0 .DISKNAME     ID."
-///  ^ ^  ^          ^
-///  | |  |          |
-///  | |  |          Two-character disk ID
-///  | |  16-character disk name (padded with shifted spaces)
-///  | Leading dot indicating header line
-///  Drive number (0 or 1)
-/// ```
-///
-/// # Examples
-///
-/// ```ignore
-/// use your_crate_name::CbmDiskHeader;
-///
-/// // Parse a header line from a directory listing
-/// let header = CbmDiskHeader::parse_header("0 .\"MY DISK     01\"")?;
-/// assert_eq!(header.drive_number, 0);
-/// assert_eq!(header.name, "MY DISK");
-/// assert_eq!(header.id, "01");
-/// ```
-///
-/// # Header Format Details
-///
-/// - The drive number is 0 for the first drive or 1 for the second drive in dual units
-/// - The disk name can be up to 16 characters, padded with shifted spaces if shorter
-/// - The ID is always exactly 2 characters
-/// - Special characters in the name are stored in PETSCII but converted to ASCII for display
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct CbmDirListing {
-    /// The drive number (0 or 1) where this disk is mounted
-    header: CbmDiskHeader,
-
-    /// The name of the disk (up to 16 characters)
-    files: Vec<CbmFileEntry>,
-
-    /// The two-character disk ID
-    blocks_free: u16,
-}
-
-impl fmt::Display for CbmDirListing {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}", self.header)?;
-        for entry in &self.files {
-            writeln!(f, "{}", entry)?;
-        }
-        writeln!(f, "Free blocks: {}", self.blocks_free)
-    }
-}
-
-impl CbmDirListing {
-    /// Parses a raw directory listing string into a structured format.
-    ///
-    /// This function takes the raw text output from a directory command and
-    /// converts it into a structured `CbmDirListing` containing the header,
-    /// file entries, and free space information.
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - Raw directory listing string from the disk
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(CbmDirListing)` if parsing succeeds
-    /// * `Err(CbmError)` if the listing cannot be parsed
-    ///
-    /// # Errors
-    ///
-    /// Returns `CbmError::ParseError` if:
-    /// - The header line is missing or invalid
-    /// - The blocks free line is missing or invalid
-    /// - The listing format doesn't match expectations
-    ///
-    /// Note that invalid file entries do not cause the parse to fail;
-    /// they are stored as `CbmFileEntry::InvalidFile` variants.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// let raw_dir = r#"
-    /// 0 "MY DISK     01" 2A
-    /// 10   "PROGRAM"     PRG
-    /// 5    "DATA"        SEQ
-    /// 664 BLOCKS FREE.
-    /// "#;
-    ///
-    /// let dir = CbmDirListing::parse(raw_dir)?;
-    /// assert_eq!(dir.header.name, "MY DISK");
-    /// assert_eq!(dir.files.len(), 2);
-    /// assert_eq!(dir.blocks_free, 664);
-    /// ```
-    pub fn parse(input: &str) -> Result<Self, CbmError> {
-        let mut lines = input.lines();
-
-        // Parse header
-        let header = Self::parse_header(lines.next().ok_or_else(|| CbmError::ParseError {
-            message: "Missing header line".to_string(),
-        })?)?;
-
-        // Parse files
-        let mut files = Vec::new();
-        let mut blocks_free = None;
-
-        for line in lines {
-            if line.contains("blocks free") {
-                blocks_free = Some(Self::parse_blocks_free(line)?);
-                break;
-            } else {
-                files.push(Self::parse_file_entry(line));
-            }
-        }
-
-        let blocks_free = blocks_free.ok_or_else(|| CbmError::ParseError {
-            message: "Missing blocks free line".to_string(),
-        })?;
-
-        Ok(CbmDirListing {
-            header,
-            files,
-            blocks_free,
-        })
-    }
-
-    fn parse_header(line: &str) -> Result<CbmDiskHeader, CbmError> {
-        // Example: "   0 ."test/demo  1/85 " 8a 2a"
-        let re =
-            regex::Regex::new(r#"^\s*(\d+)\s+\."([^"]*)" ([a-zA-Z0-9]{2})"#).map_err(|_| {
-                CbmError::ParseError {
-                    message: "Invalid header regex".to_string(),
-                }
-            })?;
-
-        let caps = re.captures(line).ok_or_else(|| CbmError::ParseError {
-            message: format!("Invalid header format: {}", line),
-        })?;
-
-        Ok(CbmDiskHeader {
-            drive_number: caps[1].parse().map_err(|_| CbmError::ParseError {
-                message: format!("Invalid drive number: {}", &caps[1]),
-            })?,
-            name: caps[2].trim_end().to_string(), // Keep leading spaces, trim trailing
-            id: caps[3].to_string(),
-        })
-    }
-
-    fn parse_file_entry(line: &str) -> CbmFileEntry {
-        let re = regex::Regex::new(r#"^\s*(\d+)\s+"([^"]+)"\s+(\w+)\s*$"#).expect("Invalid regex");
-
-        match re.captures(line) {
-            Some(caps) => {
-                let blocks = match caps[1].trim().parse() {
-                    Ok(b) => b,
-                    Err(_) => {
-                        return CbmFileEntry::InvalidFile {
-                            raw_line: line.to_string(),
-                            error: "Invalid block count".to_string(),
-                            partial_blocks: None,
-                            partial_filename: Some(caps[2].to_string()),
-                        }
-                    }
-                };
-
-                let filetype = CbmFileType::from(&caps[3]);
-
-                CbmFileEntry::ValidFile {
-                    blocks,
-                    filename: caps[2].to_string(), // Keep all spaces
-                    file_type: filetype,
-                }
-            }
-            None => CbmFileEntry::InvalidFile {
-                raw_line: line.to_string(),
-                error: "Could not parse line format".to_string(),
-                partial_blocks: None,
-                partial_filename: None,
-            },
-        }
-    }
-
-    fn parse_blocks_free(line: &str) -> Result<u16, CbmError> {
-        let re =
-            regex::Regex::new(r"^\s*(\d+)\s+blocks free").map_err(|_| CbmError::ParseError {
-                message: "Invalid blocks free regex".to_string(),
-            })?;
-
-        let caps = re.captures(line).ok_or_else(|| CbmError::ParseError {
-            message: format!("Invalid blocks free format: {}", line),
-        })?;
-
-        caps[1].parse().map_err(|_| CbmError::ParseError {
-            message: format!("Invalid blocks free number: {}", &caps[1]),
-        })
     }
 }

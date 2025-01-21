@@ -1,7 +1,8 @@
 //! # Async Example
 //!
 //! This example demonstrates thread-safe concurrent access to a Commodore disk drive
-//! using rs1541's mutex-protected OpenCBM handle. It spawns two concurrent tasks:
+//! using rs1541's mutex-protected XUM1541 driverhandle. It spawns two concurrent
+//! tasks:
 //!
 //! * Task 1 identifies the drive and reads its directory
 //! * Task 2 polls the drive status multiple times at fixed intervals

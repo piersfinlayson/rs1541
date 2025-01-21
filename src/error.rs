@@ -99,7 +99,7 @@ impl From<Box<dyn Any + Send>> for CbmError {
 
         CbmError::DeviceError {
             device: 0,
-            message: format!("Panic in opencbm: {}", msg),
+            message: format!("Panic: {}", msg),
         }
     }
 }
