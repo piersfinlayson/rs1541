@@ -113,7 +113,9 @@ fn main() -> Result<(), CbmError> {
                             continue;
                         }
                         let cmd_str = cmd[1..].join(" ");
-                        match cbm.send_command(device, &CbmString::from_ascii_bytes(cmd_str.as_bytes())) {
+                        match cbm
+                            .send_command(device, &CbmString::from_ascii_bytes(cmd_str.as_bytes()))
+                        {
                             Ok(()) => {
                                 println!("Command sent successfully");
                                 // Get status after command

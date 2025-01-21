@@ -1,51 +1,29 @@
-use xum1541::{DeviceAccessKind, Xum1541Error};
 use crate::CbmStatus;
-use libc::{ENODEV, EACCES, EBUSY, EINVAL, EIO, ENOENT, ENOTSUP, ENXIO, EPERM, ETIME};
+use libc::{EACCES, EBUSY, EINVAL, EIO, ENODEV, ENOENT, ENOTSUP, ENXIO, EPERM, ETIME};
 use std::any::Any;
 use thiserror::Error;
+use xum1541::{DeviceAccessKind, Xum1541Error};
 
 #[derive(Debug, Error, PartialEq)]
 pub enum CbmError {
     #[error("CbmError: {message}")]
-    OtherError {
-        message: String,
-    },
+    OtherError { message: String },
     #[error("{0}")]
     Xum1541Error(#[from] Xum1541Error),
     #[error("{}: Device error: {message}", Self::format_device(Some(*device)))]
-    DeviceError {
-        device: u8,
-        message: String,
-    },
+    DeviceError { device: u8, message: String },
     #[error("{}: Channel error: {message}", Self::format_device(Some(*device)))]
-    ChannelError {
-        device: u8,
-        message: String,
-    },
+    ChannelError { device: u8, message: String },
     #[error("{}: File error: {message}", Self::format_device(Some(*device)))]
-    FileError {
-        device: u8,
-        message: String,
-    },
+    FileError { device: u8, message: String },
     #[error("{}: Command error: {message}", Self::format_device(Some(*device)))]
-    CommandError {
-        device: u8,
-        message: String,
-    },
+    CommandError { device: u8, message: String },
     #[error("{}: Status error: {status}", Self::format_device(Some(*device)))]
-    StatusError {
-        device: u8,
-        status: CbmStatus,
-    },
+    StatusError { device: u8, status: CbmStatus },
     #[error("{}: Timeout error", Self::format_device(Some(*device)))]
-    TimeoutError {
-        device: u8,
-    },
+    TimeoutError { device: u8 },
     #[error("{}: Invalid operation: {message}", Self::format_device(Some(*device)))]
-    InvalidOperation {
-        device: u8,
-        message: String,
-    },
+    InvalidOperation { device: u8, message: String },
     #[error("System error: {}", std::io::Error::from_raw_os_error(0))]
     Errno(i32),
     #[error("Validation error: {0}")]
@@ -53,9 +31,7 @@ pub enum CbmError {
     #[error("USB error: {0}")]
     UsbError(String),
     #[error("Parse error: {message}")]
-    ParseError {
-        message: String,
-    },
+    ParseError { message: String },
     #[error("Driver not open")]
     DriverNotOpen,
 }
@@ -84,7 +60,6 @@ impl CbmError {
                     DeviceAccessKind::SerialMismatch { .. } => ENOENT,
                     DeviceAccessKind::FirmwareVersion { .. } => ENODEV,
                     DeviceAccessKind::Permission { .. } => EACCES,
-
                 },
                 Xum1541Error::Args { .. } => EINVAL,
             },

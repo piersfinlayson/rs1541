@@ -54,22 +54,22 @@
 /// Define rs1541 modules
 pub mod cbm;
 pub mod cbmtype;
+pub mod error;
 pub mod string;
 pub mod util;
 pub mod validate;
-pub mod error;
 
-/// Export the public API
-pub use error::CbmError;
 pub use cbm::{
     Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose, CbmDirListing, CbmDiskHeader,
     CbmDriveUnit, CbmFileEntry,
 };
 pub use cbmtype::{
-    CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmFileMode,
-    CbmFileType, CbmOperation, CbmOperationType, CbmStatus,
+    CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmFileMode, CbmFileType,
+    CbmOperation, CbmOperationType, CbmStatus,
 };
-pub use string::{CbmString, AsciiString, PetsciiString};
+/// Export the public API
+pub use error::CbmError;
+pub use string::{AsciiString, CbmString, PetsciiString};
 pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, petscii_to_ascii};
 pub use validate::{validate_device, DeviceValidation};
 

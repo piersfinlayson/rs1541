@@ -1,6 +1,6 @@
 use crate::CbmError;
 #[allow(unused_imports)]
-use log::{error, warn, info, debug, trace};
+use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
