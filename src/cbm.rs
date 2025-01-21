@@ -450,9 +450,7 @@ impl Cbm {
         let buf = &mut [0u8; 2];
         let result = bus
             .read(buf)
-            .inspect_err(|_| {
-                Self::error_untalk_and_close_file_locked(&mut bus, dc)
-            })
+            .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
             .map_err(|e| CbmError::DeviceError {
                 device,
                 message: format!("Failed to read load address: {}", e),
@@ -466,9 +464,7 @@ impl Cbm {
                 let buf = &mut [0u8; 2];
                 let count = bus
                     .read(buf)
-                    .inspect_err(|_| {
-                        Self::error_untalk_and_close_file_locked(&mut bus, dc)
-                    })
+                    .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
                     .map_err(|e| CbmError::DeviceError {
                         device,
                         message: format!("Failed to read link address: {}", e),
@@ -482,9 +478,7 @@ impl Cbm {
                 let size_buf = &mut [0u8; 2];
                 let size_count = bus
                     .read(size_buf)
-                    .inspect_err(|_| {
-                        Self::error_untalk_and_close_file_locked(&mut bus, dc)
-                    })
+                    .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
                     .map_err(|e| CbmError::DeviceError {
                         device,
                         message: format!("Failed to read file size: {}", e),
@@ -504,9 +498,7 @@ impl Cbm {
                     let char_buf = &mut [0u8; 1];
                     let char_count = bus
                         .read(char_buf)
-                        .inspect_err(|_| {
-                            Self::error_untalk_and_close_file_locked(&mut bus, dc)
-                        })
+                        .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
                         .map_err(|e| CbmError::DeviceError {
                             device,
                             message: format!("Failed to read filename: {}", e),
@@ -528,9 +520,7 @@ impl Cbm {
 
         // Cleanup
         bus.untalk()
-            .inspect_err(|_| {
-                Self::error_untalk_and_close_file_locked(&mut bus, dc)
-            })
+            .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
             .map_err(|e| CbmError::DeviceError {
                 device,
                 message: format!("Untalk failed: {}", e),
@@ -908,7 +898,7 @@ impl Cbm {
             let _bus = guard
                 .as_ref()
                 .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-    
+
             // TO DO properly alllocate channels
             DeviceChannel::new(device, 2)?
         };
@@ -994,7 +984,7 @@ impl Cbm {
             let _bus = guard
                 .as_ref()
                 .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-    
+
             // TO DO properly allocate channels
             DeviceChannel::new(device, 2)?
         };
@@ -1016,11 +1006,10 @@ impl Cbm {
         })?;
 
         // Now write the file data
-        bus.listen(dc)
-            .map_err(|e| CbmError::FileError {
-                device,
-                message: format!("Listen failed: {}", e),
-            })?;
+        bus.listen(dc).map_err(|e| CbmError::FileError {
+            device,
+            message: format!("Listen failed: {}", e),
+        })?;
 
         // Write data in chunks
         for chunk in data.chunks(256) {
@@ -1047,11 +1036,7 @@ impl Cbm {
     }
 
     /// Open a file using an ASCII filename
-    pub fn open_file(
-        &self,
-        dc: DeviceChannel, 
-        filename: &AsciiString,
-    ) -> Result<(), CbmError> {
+    pub fn open_file(&self, dc: DeviceChannel, filename: &AsciiString) -> Result<(), CbmError> {
         let mut guard = self.handle.lock();
         let bus = guard
             .as_mut()
@@ -1075,10 +1060,7 @@ impl Cbm {
         Self::close_file_locked(bus, dc)
     }
 
-    fn close_file_locked(
-        bus: &mut xum1541::Bus,
-        dc: DeviceChannel,
-    ) -> Result<(), CbmError> {
+    fn close_file_locked(bus: &mut xum1541::Bus, dc: DeviceChannel) -> Result<(), CbmError> {
         bus.close(dc).map_err(|e| e.into())
     }
 }
@@ -1088,12 +1070,10 @@ impl Cbm {
     /// Used for error handling where a device was opened but an error occurred before the file was closed
     fn error_untalk_and_close_file_locked(bus: &mut xum1541::Bus, dc: DeviceChannel) {
         trace!("Cbm::error_untalk_and_close_file_locked");
-        let _ = bus
-            .untalk()
-            .inspect_err(|_| debug!("Untalk failed {}", dc));
+        let _ = bus.untalk().inspect_err(|_| debug!("Untalk failed {}", dc));
 
-        let _ = Self::close_file_locked(bus, dc)
-            .inspect_err(|_| debug!("Close file failed {}", dc));
+        let _ =
+            Self::close_file_locked(bus, dc).inspect_err(|_| debug!("Close file failed {}", dc));
         trace!("Exited Cbm::error_untalk_and_close_file_locked");
     }
 
