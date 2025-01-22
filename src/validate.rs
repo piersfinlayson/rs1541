@@ -1,4 +1,4 @@
-use log::debug;
+use log::trace;
 
 use crate::CbmError;
 use crate::{DEFAULT_DEVICE_NUM, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
@@ -21,18 +21,18 @@ pub fn validate_device(
     match (device, validation) {
         (Some(nm), _) => {
             if nm < MIN_DEVICE_NUM || nm > MAX_DEVICE_NUM {
-                debug!("Device num out of allowed range {}", nm);
+                trace!("Device num out of allowed range {}", nm);
                 Err(CbmError::ValidationError(format!(
                     "Device num must be between {} and {}",
                     MIN_DEVICE_NUM, MAX_DEVICE_NUM
                 )))
             } else {
-                debug!("Device num in allowed range {}", nm);
+                trace!("Device num in allowed range {}", nm);
                 Ok(device)
             }
         }
         (None, DeviceValidation::Required) => {
-            debug!("Error - no device num supplied");
+            trace!("Error - no device num supplied");
             Err(CbmError::ValidationError(format!("No device num supplied")))
         }
         (None, DeviceValidation::Optional) => Ok(None),

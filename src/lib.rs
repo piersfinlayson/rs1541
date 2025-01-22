@@ -8,6 +8,8 @@
 //! Thread-safe access is provided through protected mutex handles enables safe usage in
 //! multi-threaded and async applications.
 //!
+//! The primary object is [`Cbm`].
+//!
 //! ## Features
 //! * RAII-based driver management - no manual open/close needed
 //! * Thread-safe access for multi-threaded and async applications

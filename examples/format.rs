@@ -19,7 +19,8 @@ fn main() -> Result<(), CbmError> {
     // will contain the error code reported by the drive.
     let ascii_disk_name = AsciiString::from_ascii_str(disk_name);
     let ascii_disk_id = AsciiString::from_ascii_str(disk_id);
-    let status = cbm.format_disk(8, &ascii_disk_name, &ascii_disk_id)?;
+    cbm.format_disk(8, &ascii_disk_name, &ascii_disk_id)?;
+    let status = cbm.get_status(8)?; 
     println!("Drive status after formatting: {}", status);
 
     // Read directory

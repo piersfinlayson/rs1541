@@ -8,30 +8,40 @@ use xum1541::{DeviceAccessKind, Xum1541Error};
 pub enum CbmError {
     #[error("CbmError: {message}")]
     OtherError { message: String },
+    
     #[error("{0}")]
     Xum1541Error(#[from] Xum1541Error),
+    
     #[error("{}: Device error: {message}", Self::format_device(Some(*device)))]
     DeviceError { device: u8, message: String },
+    
     #[error("{}: Channel error: {message}", Self::format_device(Some(*device)))]
     ChannelError { device: u8, message: String },
+    
     #[error("{}: File error: {message}", Self::format_device(Some(*device)))]
     FileError { device: u8, message: String },
-    #[error("{}: Command error: {message}", Self::format_device(Some(*device)))]
-    CommandError { device: u8, message: String },
-    #[error("{}: Status error: {status}", Self::format_device(Some(*device)))]
-    StatusError { device: u8, status: CbmStatus },
+
+    #[error("{}: Status error: {status}", Self::format_device(Some(status.device)))]
+    StatusError { status: CbmStatus },
+    
     #[error("{}: Timeout error", Self::format_device(Some(*device)))]
     TimeoutError { device: u8 },
+    
     #[error("{}: Invalid operation: {message}", Self::format_device(Some(*device)))]
     InvalidOperation { device: u8, message: String },
+    
     #[error("System error: {}", std::io::Error::from_raw_os_error(0))]
     Errno(i32),
+    
     #[error("Validation error: {0}")]
     ValidationError(String),
+    
     #[error("USB error: {0}")]
     UsbError(String),
+    
     #[error("Parse error: {message}")]
     ParseError { message: String },
+    
     #[error("Driver not open")]
     DriverNotOpen,
 }
@@ -39,7 +49,6 @@ pub enum CbmError {
 impl From<CbmStatus> for CbmError {
     fn from(status: CbmStatus) -> Self {
         CbmError::StatusError {
-            device: status.device,
             status,
         }
     }
@@ -66,7 +75,6 @@ impl CbmError {
             CbmError::DeviceError { .. } => EIO,
             CbmError::ChannelError { .. } => EBUSY,
             CbmError::FileError { .. } => ENOENT,
-            CbmError::CommandError { .. } => EIO,
             CbmError::TimeoutError { .. } => EIO,
             CbmError::InvalidOperation { .. } => ENOTSUP,
             CbmError::Errno(errno) => *errno,

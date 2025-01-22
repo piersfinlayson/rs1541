@@ -170,8 +170,8 @@ impl fmt::Display for CbmStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{:02},{},{:02},{:02}",
-            self.number, self.message, self.track, self.sector
+            "Device {}: {:02},{},{:02},{:02}",
+            self.device, self.number, self.message, self.track, self.sector
         )
     }
 }
@@ -182,6 +182,16 @@ impl Into<Result<(), CbmError>> for CbmStatus {
             CbmErrorNumberOk::Ok => Ok(()),
             CbmErrorNumberOk::Number73 => Err(self.into()),
             CbmErrorNumberOk::Err => Err(self.into()),
+        }
+    }
+}
+
+impl CbmStatus {
+    pub fn into_73_ok(self) -> Result<(), CbmError> {
+        if self.is_ok() == CbmErrorNumberOk::Number73 {
+            Ok(())
+        } else {
+            Err(self.into())
         }
     }
 }
@@ -634,7 +644,7 @@ mod tests {
             sector: 0,
             device: 8,
         };
-        let error = CbmError::StatusError { device: 8, status };
+        let error = CbmError::StatusError { status };
         assert_eq!(
             error.to_string(),
             "Device 8: Status error: 21,READ ERROR,18,00"

@@ -49,12 +49,43 @@ fn main() -> Result<(), CbmError> {
                         message: e.to_string(),
                     })?;
 
-                let cmd: Vec<&str> = line.split_whitespace().collect();
+                let cmd: Vec<String> = {
+                    let mut cmd = Vec::new();
+                    let mut current = String::new();
+                    let mut in_quotes = false;
+                    let chars: Vec<char> = line.chars().collect();
+                    let mut i = 0;
+                
+                    while i < chars.len() {
+                        match chars[i] {
+                            '"' => {
+                                in_quotes = !in_quotes;
+                                if !in_quotes && !current.is_empty() {
+                                    cmd.push(current.clone());
+                                    current.clear();
+                                }
+                            }
+                            ' ' if !in_quotes => {
+                                if !current.is_empty() {
+                                    cmd.push(current.clone());
+                                    current.clear();
+                                }
+                            }
+                            _ => current.push(chars[i]),
+                        }
+                        i += 1;
+                    }
+                    if !current.is_empty() {
+                        cmd.push(current);
+                    }
+                    cmd
+                };
+                
                 if cmd.is_empty() {
                     continue;
                 }
 
-                match cmd[0] {
+                match cmd[0].as_str() {
                     "quit" | "exit" | "q" | "x" => break,
 
                     "identify" | "id" | "i" => match cbm.identify(device) {
@@ -133,13 +164,40 @@ fn main() -> Result<(), CbmError> {
                             println!("Usage: format <name> <id>");
                             continue;
                         }
-                        let disk_name = AsciiString::from_ascii_str(cmd[1]);
-                        let disk_id = AsciiString::from_ascii_str(cmd[2]);
+                        let disk_name = AsciiString::from_ascii_str(cmd[1].as_str());
+                        let disk_id = AsciiString::from_ascii_str(cmd[2].as_str());
                         match cbm.format_disk(device, &disk_name, &disk_id) {
-                            Ok(status) => println!("Format complete: {}", status),
-                            Err(e) => println!("Error: {}", e),
+                            Ok(()) => {
+                                match cbm.get_status(device) {
+                                    Ok(status) => println!("Format complete: {}", status),
+                                    Err(e) => println!("Error during get_status after format: {}", e),
+                                }
+                            },
+                            Err(e) => println!("Error during format: {}", e),
                         }
                     }
+
+                    "load" | "l" => {
+                        if cmd.len() < 2 {
+                            println!("Usage: load \"file name\"  or  load filename ");
+                            continue;
+                        }
+
+                        // Rejoin the remaining parts and trim any quotes
+                        let filename_part = cmd[1..].join(" ");
+                        let filename = if filename_part.starts_with('"') && filename_part.ends_with('"') {
+                            // Remove the surrounding quotes
+                            filename_part[1..filename_part.len()-1].to_string()
+                        } else {
+                            filename_part
+                        };
+                        
+                        let filename = AsciiString::from_ascii_str(&filename);
+                        match cbm.load_file_ascii(device, &filename) {
+                            Ok(file) => println!("Load of {filename} complete - length {}", file.len()),
+                            Err(e) => println!("Error: {}", e),
+                        }
+                    },
 
                     "print" | "p" => {
                         println!("Device number: {}", device);
@@ -166,19 +224,20 @@ fn main() -> Result<(), CbmError> {
 
                     "help" | "h" | "?" => {
                         println!("Available commands:");
-                        println!("  i|id|identify         - Get device info");
-                        println!("  s|status              - Get device status");
+                        println!("  i|id|identify            - Get device info");
+                        println!("  s|status                 - Get device status");
                         println!(
-                            "  d|dir [0|1]           - List directory (optional drive number)"
+                            "  d|dir [0|1]              - List directory (optional drive number)"
                         );
-                        println!("  r|b|reset             - Reset the IEC bus");
-                        println!("  u|usbreset            - Reset the USB device");
-                        println!("  c|command <cmd>       - Send command to device");
-                        println!("  f|format <name> <id>  - Format disk");
-                        println!("  p|print               - Print config");
-                        println!("  n|num 8-15            - Change device number");
-                        println!("  h|?|help              - Show this help");
-                        println!("  q|x|quit|exit         - Exit program");
+                        println!("  r|b|reset                - Reset the IEC bus");
+                        println!("  u|usbreset               - Reset the USB device");
+                        println!("  c|command <cmd>          - Send command to device");
+                        println!("  f|format <name> <id>     - Format disk");
+                        println!("  l|load <filename>        - Load file from disk");
+                        println!("  p|print                  - Print config");
+                        println!("  n|num 8-15               - Change device number");
+                        println!("  h|?|help                 - Show this help");
+                        println!("  q|x|quit|exit            - Exit program");
                     }
 
                     _ => println!("Unknown command. Type 'help' for available commands."),
