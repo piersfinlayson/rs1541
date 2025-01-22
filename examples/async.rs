@@ -42,6 +42,8 @@ impl Error for TaskError {}
 
 #[tokio::main]
 async fn main() -> Result<(), CbmError> {
+    env_logger::init();
+
     let cbm = Arc::new(Cbm::new()?);
 
     // Thread 1

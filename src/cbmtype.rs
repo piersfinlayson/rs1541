@@ -33,35 +33,37 @@ impl CbmStatus {
         trace!("Received device status from device {}: {}", device, status);
         trace!("Status bytes: {:?}", status.as_bytes());
 
-        let clean_status = if let Some(pos) = status.find("\r\0") {
+        let clean_status = if let Some(pos) = status.find("\r") {
             &status[..pos]
         } else {
             status
         };
-        let null_count = clean_status
-            .chars()
-            .take(3)
-            .take_while(|&c| c == '\0')
-            .count();
-        let clean_status = &clean_status[null_count..];
 
-        debug!("Received cleaned device status: {}", clean_status);
+        debug!(
+            "Received cleaned device status: {}, length {}",
+            clean_status,
+            clean_status.len()
+        );
+
+        if clean_status.len() == 0 {
+            return Err(CbmError::ParseError {
+                message: format!("Device {device} provided zero length status string"),
+            });
+        }
 
         let parts: Vec<&str> = clean_status.split(',').collect();
         if parts.len() != 4 {
-            return Err(CbmError::DeviceError {
-                device,
-                message: format!("Invalid status format: {}", clean_status),
+            return Err(CbmError::ParseError {
+                message: format!("Device {device} supplied status format: {clean_status}"),
             });
         }
 
         let number = parts[0]
             .trim()
             .parse::<u8>()
-            .map_err(|_| CbmError::DeviceError {
-                device,
+            .map_err(|_| CbmError::ParseError {
                 message: format!(
-                    "Invalid error number: {} within status: {}",
+                    "Device {device}: Invalid error number: {} within status: {}",
                     parts[0], clean_status
                 ),
             })?;
@@ -75,10 +77,9 @@ impl CbmStatus {
         let track = parts[2]
             .trim()
             .parse::<u8>()
-            .map_err(|_| CbmError::DeviceError {
-                device,
+            .map_err(|_| CbmError::ParseError {
                 message: format!(
-                    "Invalid track: {} within status: {}",
+                    "Device {device}: Invalid track: {} within status: {}",
                     parts[2], clean_status
                 ),
             })?;
@@ -88,10 +89,9 @@ impl CbmStatus {
             .trim_end_matches('\n')
             .trim()
             .parse::<u8>()
-            .map_err(|_| CbmError::DeviceError {
-                device,
+            .map_err(|_| CbmError::ParseError {
                 message: format!(
-                    "Invalid sector: {} within status: {}",
+                    "Device {device}: Invalid sector: {} within status: {}",
                     parts[3], clean_status
                 ),
             })?;
@@ -211,15 +211,13 @@ impl CbmDeviceInfo {
     pub fn from_magic(magic: u16, magic2: Option<u16>) -> Self {
         let (device_type, description) = match magic {
             0xfeb6 => (CbmDeviceType::Cbm2031, String::from("2031")),
-            0xaaaa => {
-                match magic2 {
-                    Some(magic2) => match magic2 {
-                        0x3156 => (CbmDeviceType::Cbm1540, String::from("1540")),
-                        0xfeb6 => (CbmDeviceType::Cbm2031, String::from("2031")),
-                        _ => (CbmDeviceType::Cbm1541, String::from("1541")),
-                    },
-                    None => (CbmDeviceType::Cbm1541, String::from("1541")),
-                }
+            0xaaaa => match magic2 {
+                Some(magic2) => match magic2 {
+                    0x3156 => (CbmDeviceType::Cbm1540, String::from("1540")),
+                    0xfeb6 => (CbmDeviceType::Cbm2031, String::from("2031")),
+                    _ => (CbmDeviceType::Cbm1541, String::from("1541")),
+                },
+                None => (CbmDeviceType::Cbm1541, String::from("1541")),
             },
             0xf00f => (CbmDeviceType::Cbm1541, String::from("1541-II")),
             0xcd18 => (CbmDeviceType::Cbm1541, String::from("1541C")),
@@ -558,9 +556,9 @@ mod tests {
         let result = CbmStatus::new("bibble bobble flibble flobble", 8);
         assert_eq!(
             result,
-            Err(CbmError::DeviceError {
-                device: 8,
-                message: "Invalid status format: bibble bobble flibble flobble".to_string()
+            Err(CbmError::ParseError {
+                message: "Device 8 supplied status format: bibble bobble flibble flobble"
+                    .to_string()
             })
         );
     }

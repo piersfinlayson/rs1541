@@ -114,7 +114,7 @@ use crate::{
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
-use xum1541::DeviceChannel;
+use xum1541::{Bus, BusBuilder, DeviceChannel};
 
 use std::collections::HashMap;
 use std::fmt;
@@ -149,7 +149,7 @@ use std::sync::Arc;
 /// ```
 #[derive(Debug, Clone)]
 pub struct Cbm {
-    handle: Arc<Mutex<Option<xum1541::Bus>>>,
+    handle: Arc<Mutex<Option<Bus>>>,
 }
 
 /// Functions to manage this and the Bus object
@@ -173,7 +173,7 @@ impl Cbm {
     /// ```
     pub fn new() -> Result<Self, CbmError> {
         trace!("Cbm::new");
-        let mut bus = xum1541::BusBuilder::new().build()?;
+        let mut bus = BusBuilder::new().build()?;
         bus.initialize()?;
 
         Ok(Self {
@@ -205,12 +205,12 @@ impl Cbm {
         // Lock the old handle - will be unlocked when it goes out of scope
         let mut handle = self.handle.lock();
 
-        // Drop the old xum1541::Bus instance which will close the driver
+        // Drop the old Bus instance which will close the driver
         let old_bus = handle.take();
         drop(old_bus);
 
         // Create a new instance (can fail)
-        let mut new_bus = xum1541::BusBuilder::new().build()?;
+        let mut new_bus = BusBuilder::new().build()?;
         new_bus.initialize()?;
 
         // Set the stored handle to the new instance
@@ -315,8 +315,10 @@ impl Cbm {
             _ => None,
         };
 
+        let device_info = CbmDeviceInfo::from_magic(magic, magic2);
+
         // Generate the device type from the magic number(s)
-        Ok(CbmDeviceInfo::from_magic(magic, magic2))
+        Ok(device_info)
     }
 
     /// Gets the status of a device.
@@ -347,7 +349,7 @@ impl Cbm {
         let mut bus = guard
             .as_mut()
             .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-        Self::get_status_already_locked(&mut bus, device)
+        Self::get_status_locked(&mut bus, device)
     }
 
     /// Gets a directory listing from the device.
@@ -406,148 +408,157 @@ impl Cbm {
             message: e.to_string(),
         })?;
 
+        // The whole open file, reading stuff and closing file must be done
+        // within a single lock, otherwise other operations might come in
+        // and open other files on this channel, etc.
         let dc = DeviceChannel::new(device, 0)?;
-        self.open_file(dc, &filename)
-            .map_err(|e| CbmError::DeviceError {
-                device,
-                message: format!("Failed to open directory {}: {}", filename, e),
+        let filename: PetsciiString = filename.into();
+        let output = {
+            let mut guard = self.handle.lock();
+            let mut bus = guard
+                .as_mut()
+                .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
+
+            Self::open_file_petscii_locked(bus, dc, &filename).map_err(|e| {
+                CbmError::DeviceError {
+                    device,
+                    message: format!("Failed to open directory {}: {}", filename, e),
+                }
             })?;
 
-        let mut output = String::new();
-
-        // Check that open succeeded
-        // TODO too much code to check the open succeeded!
-        // Maybe put in open_file?
-        match self.get_status(device) {
-            Ok(status) => {
-                if status.is_ok() != CbmErrorNumberOk::Ok {
+            // Check that open succeeded
+            // TODO too much code to check the open succeeded!
+            // Maybe put in open_file?
+            match Self::get_status_locked(bus, device) {
+                Ok(status) => {
+                    if status.is_ok() != CbmErrorNumberOk::Ok {
+                        let _ = self.close_file(dc);
+                        return Err(CbmError::CommandError {
+                            device,
+                            message: format!("Got error status after dir open {}", status),
+                        });
+                    } else {
+                        debug!("status value after dir open {}", status);
+                    }
+                }
+                Err(e) => {
                     let _ = self.close_file(dc);
                     return Err(CbmError::CommandError {
                         device,
-                        message: format!("Got error status after dir open {}", status),
+                        message: format!("Failed to open directory: {}", e),
                     });
-                } else {
-                    debug!("status value after dir open {}", status);
                 }
             }
-            Err(e) => {
-                let _ = self.close_file(dc);
-                return Err(CbmError::CommandError {
-                    device,
-                    message: format!("Failed to open directory: {}", e),
-                });
-            }
-        }
 
-        let mut guard = self.handle.lock();
-        let mut bus = guard
-            .as_mut()
-            .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-
-        // Read the directory data
-        match bus.talk(dc) {
-            Ok(_) => {}
-            Err(e) => {
-                let _ = Self::close_file_locked(bus, dc);
-                return Err(CbmError::DeviceError {
-                    device,
-                    message: format!("Talk failed: {}", e),
-                });
-            }
-        };
-
-        // TO DO this is awfully long as well - make more readable
-        // Skip the load address (first two bytes)
-        trace!("Read 2 bytes");
-        let buf = &mut [0u8; 2];
-        let result = bus
-            .read(buf)
-            .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
-            .map_err(|e| CbmError::DeviceError {
-                device,
-                message: format!("Failed to read load address: {}", e),
-            })?;
-
-        if result == 2 {
-            // Read directory entries
-            loop {
-                trace!("In read loop");
-                // Read link address
-                let buf = &mut [0u8; 2];
-                let count = bus
-                    .read(buf)
-                    .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
-                    .map_err(|e| CbmError::DeviceError {
+            // Read the directory data
+            match bus.talk(dc) {
+                Ok(_) => {}
+                Err(e) => {
+                    let _ = Self::close_file_locked(bus, dc);
+                    return Err(CbmError::DeviceError {
                         device,
-                        message: format!("Failed to read link address: {}", e),
-                    })?;
-
-                if count != 2 {
-                    break;
+                        message: format!("Talk failed: {}", e),
+                    });
                 }
+            };
 
-                // Read file size
-                let size_buf = &mut [0u8; 2];
-                let size_count = bus
-                    .read(size_buf)
-                    .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
-                    .map_err(|e| CbmError::DeviceError {
-                        device,
-                        message: format!("Failed to read file size: {}", e),
-                    })?;
+            // TO DO this is awfully long as well - make more readable
+            // Skip the load address (first two bytes)
+            trace!("Read 2 bytes");
+            let buf = &mut [0u8; 2];
+            let result = bus
+                .read(buf)
+                .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
+                .map_err(|e| CbmError::DeviceError {
+                    device,
+                    message: format!("Failed to read load address: {}", e),
+                })?;
 
-                if size_count != 2 {
-                    break;
-                }
+            let mut output = String::new();
 
-                // Calculate file size (little endian)
-                let size = (size_buf[0] as u16) | ((size_buf[1] as u16) << 8);
-                output.push_str(&format!("{:4} ", size));
-
-                // Read filename characters until 0 byte
-                let mut filename = Vec::new();
+            if result == 2 {
+                // Read directory entries
                 loop {
-                    let char_buf = &mut [0u8; 1];
-                    let char_count = bus
-                        .read(char_buf)
+                    trace!("In read loop");
+                    // Read link address
+                    let buf = &mut [0u8; 2];
+                    let count = bus
+                        .read(buf)
                         .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
                         .map_err(|e| CbmError::DeviceError {
                             device,
-                            message: format!("Failed to read filename: {}", e),
+                            message: format!("Failed to read link address: {}", e),
                         })?;
 
-                    if char_count != 1 || char_buf[0] == 0 {
+                    if count != 2 {
                         break;
                     }
 
-                    filename.push(char_buf[0]);
-                }
-                let petscii_filename = PetsciiString::from_petscii_bytes(&filename);
-                let ascii_filename: AsciiString = petscii_filename.into();
-                let str_filename = ascii_filename.to_string();
-                output.push_str(&str_filename);
-                output.push('\n');
-            }
-        }
+                    // Read file size
+                    let size_buf = &mut [0u8; 2];
+                    let size_count = bus
+                        .read(size_buf)
+                        .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
+                        .map_err(|e| CbmError::DeviceError {
+                            device,
+                            message: format!("Failed to read file size: {}", e),
+                        })?;
 
-        // Cleanup
-        bus.untalk()
-            .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
-            .map_err(|e| CbmError::DeviceError {
+                    if size_count != 2 {
+                        break;
+                    }
+
+                    // Calculate file size (little endian)
+                    let size = (size_buf[0] as u16) | ((size_buf[1] as u16) << 8);
+                    output.push_str(&format!("{:4} ", size));
+
+                    // Read filename characters until 0 byte
+                    let mut filename = Vec::new();
+                    loop {
+                        let char_buf = &mut [0u8; 1];
+                        let char_count = bus
+                            .read(char_buf)
+                            .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
+                            .map_err(|e| CbmError::DeviceError {
+                                device,
+                                message: format!("Failed to read filename: {}", e),
+                            })?;
+
+                        if char_count != 1 || char_buf[0] == 0 {
+                            break;
+                        }
+
+                        filename.push(char_buf[0]);
+                    }
+                    let petscii_filename = PetsciiString::from_petscii_bytes(&filename);
+                    let ascii_filename: AsciiString = petscii_filename.into();
+                    let str_filename = ascii_filename.to_string();
+                    output.push_str(&str_filename);
+                    output.push('\n');
+                }
+            }
+
+            // Cleanup
+            bus.untalk()
+                .inspect_err(|_| Self::error_untalk_and_close_file_locked(&mut bus, dc))
+                .map_err(|e| CbmError::DeviceError {
+                    device,
+                    message: format!("Untalk failed: {}", e),
+                })?;
+
+            Self::close_file_locked(bus, dc).map_err(|e| CbmError::DeviceError {
                 device,
-                message: format!("Untalk failed: {}", e),
+                message: format!("Failed to close directory: {}", e),
             })?;
 
-        Self::close_file_locked(bus, dc).map_err(|e| CbmError::DeviceError {
-            device,
-            message: format!("Failed to close directory: {}", e),
-        })?;
+            // Get final status
+            let status = Self::get_status_locked(&mut bus, device)?;
+            if status.is_ok() != CbmErrorNumberOk::Ok {
+                return Err(status.into());
+            }
 
-        // Get final status
-        let status = Self::get_status_already_locked(&mut bus, device)?;
-        if status.is_ok() != CbmErrorNumberOk::Ok {
-            return Err(status.into());
-        }
+            output
+        };
 
         CbmDirListing::parse(&output)
     }
@@ -660,49 +671,102 @@ impl Cbm {
 /// Lower level public API
 impl Cbm {
     /// Function to read a number of consecutive bytes from a drive
+    ///
     /// Currently only reads one byte at a time for DOS1 compatibility
     /// Returns an error if couldn't read the requested number of bytes
     /// Will wrap around from 0xffff to 0x0000 and continue if necessary
-    /// Returns an error if couldn't read all request bytes
+    ///
+    /// # Arguments
+    /// - `device` - Device number to read from
+    /// - `addr` - [`u16`]` indicating which address to read from
+    /// - `buf` - buffer to read into, and the size of this buffer controls how many bytes will be read (one at a time)
+    ///
+    /// # Returns
+    /// - `()` - is successful
+    /// - `CbmError` - if an error occurs
+    ///
+    /// Returns an error if couldn't read all request bytes.
+    ///
+    /// Note that the M-R command leaves the drive in a bad state.  The 1571
+    /// manual states, page 75, "Any #INPUT from the error channel will give
+    /// peculiar results when you're using this command.  This can be cleared
+    /// up by sending any other command to the disk, except another memory
+    /// command".
+    ///
+    /// As there are few commands which don't cause some sort of physical
+    /// actions or state change on the drive, immediately after doing an M-R
+    /// we retrieve the status, expecting it to fail (it will likely return)
+    /// a single byte - lik `\r`.
     pub fn read_drive_memory(&self, device: u8, addr: u16, buf: &mut [u8]) -> Result<(), CbmError> {
         let size = buf.len();
         trace!("Cbm::read_drive_memory: device {device} addr 0x{addr:04x} size {size}");
 
         // Validate arguments
-        if size == 0 {
-            warn!("Asked to read 0 bytes from device {device} memory address 0x{addr:04x}");
-            return Err(CbmError::OtherError {
-                message: format!(
-                    "Asked to read 0 bytes from device {device} memory address 0x{addr:04x}"
-                ),
-            });
-        }
+        Self::validate_read_args(
+            size,
+            format!("Asked to read 0 bytes from device {device} memory address 0x{addr:04x}"),
+        )?;
 
         // Split address into low and high bytes
         let mut addr_low = (addr & 0xFF) as u8;
         let mut addr_high = ((addr >> 8) & 0xFF) as u8;
 
-        // Read one byte at a time for DOS1 compatibility
-        let mut cmd = [b'M', b'-', b'R', addr_low, addr_high];
-        let dc = DeviceChannel::new(device, 15)?;
-        for ii in 0..size {
-            self.send_command_petscii(device, &PetsciiString::from_petscii_bytes(&cmd))?;
+        // We need to get the Bus lock for the whole time we're doing stuff
+        // as the disk drive will be in a "peculiar" state, during and after
+        // our memory read.
+        {
+            let mut guard = self.handle.lock();
+            let bus: &mut Bus = guard
+                .as_mut()
+                .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
 
-            self.read_from_drive(dc, &mut buf[ii..ii + 1], true)?;
+            let result = (|| {
+                // Read one byte at a time for DOS1 compatibility
+                let mut cmd = [b'M', b'-', b'R', addr_low, addr_high];
+                let dc = DeviceChannel::new(device, 15)?;
+                for ii in 0..size {
+                    debug!("Read from memory address 0x{addr_high:02x}{addr_low:02x}");
+                    Self::send_command_petscii_locked(
+                        bus,
+                        dc,
+                        &PetsciiString::from_petscii_bytes(&cmd),
+                    )?;
 
-            // Increment and handle 16-bit address wraparound
-            if ii < size - 1 {
-                addr_low = addr_low.wrapping_add(1);
-                if addr_low == 0 {
-                    addr_high = addr_high.wrapping_add(1);
+                    Self::read_from_drive_locked(bus, dc, &mut buf[ii..ii + 1], true)?;
+
+                    debug!("Read data: 0x{:02x}", buf[ii]);
+
+                    // Increment and handle 16-bit address wraparound
+                    if ii < size - 1 {
+                        addr_low = addr_low.wrapping_add(1);
+                        if addr_low == 0 {
+                            addr_high = addr_high.wrapping_add(1);
+                        }
+                        cmd[3] = addr_low;
+                        cmd[4] = addr_high;
+                    }
                 }
-                cmd[3] = addr_low;
-                cmd[4] = addr_high;
-            }
-        }
+                Ok(())
+            })();
 
-        // If we got here, we read both bytes
-        Ok(())
+            // Always perform cleanup regardless of the operation result
+            trace!("Read status in order to clear effects of M-R command");
+            match Self::get_status_locked(bus, device) {
+                Ok(status) => debug!("Unexpectedly got status OK after M-R command {status} "),
+                Err(CbmError::ParseError { message }) => {
+                    trace!("Got expectedly bad status when reading status after M-R: {message}")
+                }
+                Err(_) => {
+                    return Err(CbmError::DeviceError {
+                        device,
+                        message: "Failed to get status after identify".to_string(),
+                    });
+                }
+            }
+
+            // Now propagate the result from the main operation
+            result
+        }
     }
 
     /// Writes the required number of bytes to the device's memory
@@ -765,12 +829,7 @@ impl Cbm {
         let bus = guard
             .as_mut()
             .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-
-        bus.listen(dc)?;
-        bus.write(cmd.as_bytes()).inspect_err(|_| {
-            let _ = bus.unlisten();
-        })?;
-        bus.unlisten().map_err(|e| e.into())
+        Self::send_command_petscii_locked(bus, dc, cmd)
     }
 
     /// Sends a command string to a device after converting from ASCII to PETSCII
@@ -808,6 +867,15 @@ impl Cbm {
         )
     }
 
+    fn validate_read_args(size: usize, message: String) -> Result<(), CbmError> {
+        if size == 0 {
+            warn!("Asked to read {size} bytes: {message}");
+            Err(CbmError::OtherError { message })
+        } else {
+            Ok(())
+        }
+    }
+
     /// Instructs the device to talk, reads the requested number of bytes
     /// then sets the device to untalk.
     /// In case of a failure, sets the device to untalk (if possible) before
@@ -820,57 +888,12 @@ impl Cbm {
         buf: &mut [u8],
         read_all: bool,
     ) -> Result<usize, CbmError> {
-        let size = buf.len();
-        trace!("Cbm::read_from_drive {dc} buf: {size} read_all: {read_all}");
+        let mut guard = self.handle.lock();
+        let bus = guard
+            .as_mut()
+            .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
 
-        // Validate arguments
-        if size == 0 {
-            warn!("Asked to read 0 bytes from {dc}");
-            return Err(CbmError::OtherError {
-                message: "Tried to read 0 bytes from device".into(),
-            });
-        }
-
-        let mut read_total = 0;
-        {
-            // Lock the bus
-            let mut guard = self.handle.lock();
-            let bus = guard
-                .as_mut()
-                .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-
-            bus.talk(dc)?;
-
-            // Main reading loop
-            loop {
-                let read_len = bus.read(&mut buf[read_total..]).inspect_err(|_| {
-                    let _ = bus.untalk();
-                })?;
-
-                if read_len == 0 {
-                    break;
-                } else {
-                    read_total += read_len;
-                    if read_len != size {
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            bus.untalk()?;
-        }
-
-        if read_total != size && read_all {
-            warn!("Failed to read {size} bytes from {dc}, read {read_total} bytes");
-            Err(CbmError::OtherError {
-                message: format!("Failed to read {size} bytes, read {read_total}"),
-            })
-        } else {
-            trace!("Successfully read {size} bytes from {dc}");
-            Ok(read_total)
-        }
+        Self::read_from_drive_locked(bus, dc, buf, read_all)
     }
 
     /// Reads a file from the disk.
@@ -1042,18 +1065,16 @@ impl Cbm {
 
     /// Open a file using an ASCII filename
     pub fn open_file(&self, dc: DeviceChannel, filename: &AsciiString) -> Result<(), CbmError> {
-        let mut guard = self.handle.lock();
-        let bus = guard
-            .as_mut()
-            .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
-
         let petscii_name: PetsciiString = filename.into();
 
-        bus.open(dc)?;
-        bus.write(petscii_name.as_bytes()).inspect_err(|_| {
-            let _ = bus.close(dc);
-        })?;
-        bus.unlisten().map_err(|e| e.into())
+        {
+            let mut guard = self.handle.lock();
+            let bus = guard
+                .as_mut()
+                .ok_or(CbmError::UsbError("No CBM handle".to_string()))?;
+
+            Self::open_file_petscii_locked(bus, dc, &petscii_name)
+        }
     }
 
     pub fn close_file(&self, dc: DeviceChannel) -> Result<(), CbmError> {
@@ -1065,7 +1086,7 @@ impl Cbm {
         Self::close_file_locked(bus, dc)
     }
 
-    fn close_file_locked(bus: &mut xum1541::Bus, dc: DeviceChannel) -> Result<(), CbmError> {
+    fn close_file_locked(bus: &mut Bus, dc: DeviceChannel) -> Result<(), CbmError> {
         bus.close(dc).map_err(|e| e.into())
     }
 }
@@ -1073,7 +1094,7 @@ impl Cbm {
 /// Internal functions
 impl Cbm {
     /// Used for error handling where a device was opened but an error occurred before the file was closed
-    fn error_untalk_and_close_file_locked(bus: &mut xum1541::Bus, dc: DeviceChannel) {
+    fn error_untalk_and_close_file_locked(bus: &mut Bus, dc: DeviceChannel) {
         trace!("Cbm::error_untalk_and_close_file_locked");
         let _ = bus.untalk().inspect_err(|_| debug!("Untalk failed {}", dc));
 
@@ -1082,14 +1103,25 @@ impl Cbm {
         trace!("Exited Cbm::error_untalk_and_close_file_locked");
     }
 
-    fn get_status_already_locked(
-        bus: &mut xum1541::Bus,
-        device: u8,
-    ) -> Result<CbmStatus, CbmError> {
-        trace!("Cbm::get_status_already_locked device: {device}");
+    fn send_command_petscii_locked(
+        bus: &mut Bus,
+        dc: DeviceChannel,
+        cmd: &PetsciiString,
+    ) -> Result<(), CbmError> {
+        bus.listen(dc)?;
+        bus.write(cmd.as_bytes()).inspect_err(|_| {
+            let _ = bus.unlisten();
+        })?;
+        bus.unlisten().map_err(|e| e.into())
+    }
+
+    fn get_status_locked(bus: &mut Bus, device: u8) -> Result<CbmStatus, CbmError> {
+        trace!("Cbm::get_status_locked device: {device}");
+
+        // Set up DeviceChannel to read the status
+        let dc = DeviceChannel::new(device, 15)?;
 
         // Put the drive into talk mode
-        let dc = DeviceChannel::new(device, 15)?;
         bus.talk(dc)?;
 
         // Read up to 64 bytes of data, stopping when we hit \r (or hit 64
@@ -1100,6 +1132,7 @@ impl Cbm {
             debug!("Hit error while in read_until() loop: {}", e);
             let _ = bus.untalk();
         })?;
+        trace!("Read {} bytes of status", bytes_read);
 
         // Tell the drive to stop talking
         bus.untalk()?;
@@ -1107,6 +1140,68 @@ impl Cbm {
         // Create the status from the buf
         let status_str = String::from_utf8_lossy(&buf[..bytes_read]).to_string();
         CbmStatus::new(&status_str, device)
+    }
+
+    fn read_from_drive_locked(
+        bus: &mut Bus,
+        dc: DeviceChannel,
+        buf: &mut [u8],
+        read_all: bool,
+    ) -> Result<usize, CbmError> {
+        let size = buf.len();
+        trace!("Cbm::read_from_drive_locked {dc} buf.len(): {size} read_all: {read_all}");
+
+        // Validate arguments
+        Self::validate_read_args(size, format!("Asked to read {size} bytes from {dc}"))?;
+
+        let mut read_total = 0;
+        {
+            // Lock the bus
+
+            bus.talk(dc)?;
+
+            // Main reading loop
+            loop {
+                let read_len = bus.read(&mut buf[read_total..]).inspect_err(|_| {
+                    let _ = bus.untalk();
+                })?;
+
+                if read_len == 0 {
+                    break;
+                } else {
+                    read_total += read_len;
+                    if read_len != size {
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            bus.untalk()?;
+        }
+
+        if read_total != size && read_all {
+            warn!("Failed to read {size} bytes from {dc}, read {read_total} bytes");
+            Err(CbmError::OtherError {
+                message: format!("Failed to read {size} bytes, read {read_total}"),
+            })
+        } else {
+            trace!("Successfully read {size} bytes from {dc}");
+            Ok(read_total)
+        }
+    }
+
+    fn open_file_petscii_locked(
+        bus: &mut Bus,
+        dc: DeviceChannel,
+        filename: &PetsciiString,
+    ) -> Result<(), CbmError> {
+        bus.open(dc)?;
+        bus.write(filename.as_bytes()).inspect_err(|_| {
+            let _ = bus.close(dc);
+        })?;
+        bus.unlisten().map_err(|e| e.into())
     }
 }
 
