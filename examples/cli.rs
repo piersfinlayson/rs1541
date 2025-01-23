@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::{info, LevelFilter};
-use rs1541::{AsciiString, Cbm, CbmError, CbmString};
+use rs1541::{AsciiString, Cbm, CbmError, CbmString, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(Parser, Debug)]
@@ -94,6 +94,24 @@ fn main() -> Result<(), CbmError> {
                             info.device_type, info.description
                         ),
                         Err(e) => println!("Error: {}", e),
+                    },
+
+                    "scan" | "a" => for id in MIN_DEVICE_NUM..=MAX_DEVICE_NUM {
+                        match cbm.identify(id) {
+                            Ok(info) => {
+                                println!(
+                                    "Found device {}: type: {} description: {}",
+                                    id, info.device_type, info.description);
+                            },
+                            Err(e) => match e {
+                                CbmError::OtherError{ .. } => {
+                                    // We this error if the device doesn't exist
+                                },
+                                e => {
+                                    println!("Error: {}", e);
+                                },
+                            },  
+                        }
                     },
 
                     "status" | "getstatus" | "s" => match cbm.get_status(device) {
@@ -224,6 +242,7 @@ fn main() -> Result<(), CbmError> {
 
                     "help" | "h" | "?" => {
                         println!("Available commands:");
+                        println!("  a|scan                   - Scan for devices");
                         println!("  i|id|identify            - Get device info");
                         println!("  s|status                 - Get device status");
                         println!(

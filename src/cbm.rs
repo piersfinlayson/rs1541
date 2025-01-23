@@ -1191,7 +1191,9 @@ impl Cbm {
         }
 
         if read_total != size && read_all {
-            warn!("Failed to read {size} bytes from {dc}, read {read_total} bytes");
+            // This can be for a totally expected reason, like there is no
+            // device at that device number
+            debug!("Failed to read {size} bytes from {dc}, read {read_total} bytes");
             Err(CbmError::OtherError {
                 message: format!("Failed to read {size} bytes, read {read_total}"),
             })
