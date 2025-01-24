@@ -101,6 +101,24 @@ fn main() -> Result<(), Rs1541Error> {
                         Err(e) => println!("Error: {}", e),
                     },
 
+                    "scan" | "a" => for id in MIN_DEVICE_NUM..=MAX_DEVICE_NUM {
+                        match cbm.identify(id) {
+                            Ok(info) => {
+                                println!(
+                                    "Found device {}: type: {} description: {}",
+                                    id, info.device_type, info.description);
+                            },
+                            Err(e) => match e {
+                                CbmError::OtherError{ .. } => {
+                                    // We this error if the device doesn't exist
+                                },
+                                e => {
+                                    println!("Error: {}", e);
+                                },
+                            },  
+                        }
+                    },
+
                     "status" | "getstatus" | "s" => match cbm.get_status(device) {
                         Ok(status) => println!("Status: {}", status),
                         Err(e) => println!("Error: {}", e),
@@ -230,6 +248,7 @@ fn main() -> Result<(), Rs1541Error> {
 
                     "help" | "h" | "?" => {
                         println!("Available commands:");
+                        println!("  a|scan                   - Scan for devices");
                         println!("  i|id|identify            - Get device info");
                         println!("  s|status                 - Get device status");
                         println!(
