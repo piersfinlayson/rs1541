@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::{info, LevelFilter};
-use rs1541::{AsciiString, Cbm, CbmError, CbmString};
+use rs1541::{AsciiString, Cbm, Rs1541Error, CbmString};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(Parser, Debug)]
@@ -15,7 +15,7 @@ struct Args {
     verbose: u8,
 }
 
-fn main() -> Result<(), CbmError> {
+fn main() -> Result<(), Rs1541Error> {
     let args = Args::parse();
     let mut device = args.device;
 
@@ -36,18 +36,23 @@ fn main() -> Result<(), CbmError> {
     let mut cbm = Cbm::new()?;
 
     // Setup command line editor
-    let mut rl = DefaultEditor::new().map_err(|e| CbmError::OtherError {
-        message: e.to_string(),
-    })?;
+    let mut rl = DefaultEditor::new()
+        .inspect_err(|e| {
+            println!("Hit error in rustline: {}", e);
+            std::process::exit(1);
+        })
+        .unwrap();
 
     loop {
         let readline = rl.readline("rs1541-cli> ");
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())
-                    .map_err(|e| CbmError::OtherError {
-                        message: e.to_string(),
-                    })?;
+                    .inspect_err(|e| {
+                        println!("Hit error in rusttline: {}", e);
+                        std::process::exit(1);
+                    })
+                    .unwrap();
 
                 let cmd: Vec<String> = {
                     let mut cmd = Vec::new();
@@ -55,7 +60,7 @@ fn main() -> Result<(), CbmError> {
                     let mut in_quotes = false;
                     let chars: Vec<char> = line.chars().collect();
                     let mut i = 0;
-                
+
                     while i < chars.len() {
                         match chars[i] {
                             '"' => {
@@ -80,7 +85,7 @@ fn main() -> Result<(), CbmError> {
                     }
                     cmd
                 };
-                
+
                 if cmd.is_empty() {
                     continue;
                 }
@@ -167,11 +172,9 @@ fn main() -> Result<(), CbmError> {
                         let disk_name = AsciiString::from_ascii_str(cmd[1].as_str());
                         let disk_id = AsciiString::from_ascii_str(cmd[2].as_str());
                         match cbm.format_disk(device, &disk_name, &disk_id) {
-                            Ok(()) => {
-                                match cbm.get_status(device) {
-                                    Ok(status) => println!("Format complete: {}", status),
-                                    Err(e) => println!("Error during get_status after format: {}", e),
-                                }
+                            Ok(()) => match cbm.get_status(device) {
+                                Ok(status) => println!("Format complete: {}", status),
+                                Err(e) => println!("Error during get_status after format: {}", e),
                             },
                             Err(e) => println!("Error during format: {}", e),
                         }
@@ -185,19 +188,22 @@ fn main() -> Result<(), CbmError> {
 
                         // Rejoin the remaining parts and trim any quotes
                         let filename_part = cmd[1..].join(" ");
-                        let filename = if filename_part.starts_with('"') && filename_part.ends_with('"') {
-                            // Remove the surrounding quotes
-                            filename_part[1..filename_part.len()-1].to_string()
-                        } else {
-                            filename_part
-                        };
-                        
+                        let filename =
+                            if filename_part.starts_with('"') && filename_part.ends_with('"') {
+                                // Remove the surrounding quotes
+                                filename_part[1..filename_part.len() - 1].to_string()
+                            } else {
+                                filename_part
+                            };
+
                         let filename = AsciiString::from_ascii_str(&filename);
                         match cbm.load_file_ascii(device, &filename) {
-                            Ok(file) => println!("Load of {filename} complete - length {}", file.len()),
+                            Ok(file) => {
+                                println!("Load of {filename} complete - length {}", file.len())
+                            }
                             Err(e) => println!("Error: {}", e),
                         }
-                    },
+                    }
 
                     "print" | "p" => {
                         println!("Device number: {}", device);

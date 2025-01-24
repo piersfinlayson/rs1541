@@ -40,8 +40,8 @@
 //! Filename: "header change.prg"        Blocks:   5
 //! Free blocks: 403
 
-use rs1541::{Cbm, CbmError};
-fn main() -> Result<(), CbmError> {
+use rs1541::{Cbm, Rs1541Error};
+fn main() -> Result<(), Rs1541Error> {
     env_logger::init();
     log::info!("Started logging");
 

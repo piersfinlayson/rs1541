@@ -1,114 +1,121 @@
 use crate::CbmStatus;
-use libc::{EACCES, EBUSY, EINVAL, EIO, ENODEV, ENOENT, ENOTSUP, ENXIO, EPERM, ETIME};
-use std::any::Any;
+use libc::{EINVAL, EIO, ETIMEDOUT};
 use thiserror::Error;
-use xum1541::{DeviceAccessKind, Xum1541Error};
+use xum1541::{DeviceChannel, Xum1541Error};
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Error, PartialEq)]
-pub enum CbmError {
-    #[error("CbmError: {message}")]
-    OtherError { message: String },
-    
+#[derive(Debug, Error, PartialEq, Serialize, Deserialize)]
+pub enum Rs1541Error {
+    /// Error from the XUM1541 device
     #[error("{0}")]
-    Xum1541Error(#[from] Xum1541Error),
-    
-    #[error("{}: Device error: {message}", Self::format_device(Some(*device)))]
-    DeviceError { device: u8, message: String },
-    
-    #[error("{}: Channel error: {message}", Self::format_device(Some(*device)))]
-    ChannelError { device: u8, message: String },
-    
-    #[error("{}: File error: {message}", Self::format_device(Some(*device)))]
-    FileError { device: u8, message: String },
+    Xum1541(#[from] Xum1541Error),
 
-    #[error("{}: Status error: {status}", Self::format_device(Some(status.device)))]
-    StatusError { status: CbmStatus },
-    
-    #[error("{}: Timeout error", Self::format_device(Some(*device)))]
-    TimeoutError { device: u8 },
-    
-    #[error("{}: Invalid operation: {message}", Self::format_device(Some(*device)))]
-    InvalidOperation { device: u8, message: String },
-    
-    #[error("System error: {}", std::io::Error::from_raw_os_error(0))]
-    Errno(i32),
-    
-    #[error("Validation error: {0}")]
-    ValidationError(String),
-    
-    #[error("USB error: {0}")]
-    UsbError(String),
-    
+    /// Hit an error when operating with a device
+    #[error("Device {device} error: {error}")]
+    Device { device: u8, error: DeviceError },
+
+    /// Hit an error when manipulating a file
+    #[error("Device {}: File error: {message}", device)]
+    File { device: u8, message: String },
+
+    /// The drive responded with a status error
+    #[error("Device {}: Status error: {status}", status.device)]
+    Status { status: CbmStatus },
+
+    /// This is distinct from Xum11541Error::Timeout, and is used to indicate
+    /// a timeout error in this higher-level API.
+    #[error("Timeout error, duration: {dur:?}")]
+    Timeout { dur: std::time::Duration },
+
+    /// Argument validation failed
+    #[error("Validation error: {message}")]
+    Validation { message: String },
+
+    /// Parsing error, most likely on data received from the device
     #[error("Parse error: {message}")]
-    ParseError { message: String },
-    
-    #[error("Driver not open")]
-    DriverNotOpen,
+    Parse { message: String },
 }
 
-impl From<CbmStatus> for CbmError {
+/// (CBM) Device errors
+#[derive(Error, Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum DeviceError {
+    /// failed to get status from this device
+    #[error("Failed to get status: {message}")]
+    GetStatusFailure { message: String },
+
+    /// Attmepted to read from an invalid drive number for this drive
+    #[error("Invalid drive number: {drive_num}")]
+    InvalidDrive { drive_num: u8 },
+
+    /// Error reading from a channel
+    #[error("Read error: Channel: {channel}, Error: {message}")]
+    Read { channel: u8, message: String },
+
+    /// Error writing to a channel
+    #[error("Write error: Channel: {channel}, Error: {message}")]
+    Write { channel: u8, message: String },
+}
+
+impl From<CbmStatus> for Rs1541Error {
     fn from(status: CbmStatus) -> Self {
-        CbmError::StatusError {
-            status,
-        }
+        Rs1541Error::Status { status }
     }
 }
 
-impl CbmError {
+impl Rs1541Error {
     /// Convert the error to a an errno
     pub fn to_errno(&self) -> i32 {
         match self {
-            CbmError::OtherError { .. } => EPERM,
-            CbmError::Xum1541Error(error) => match error {
-                Xum1541Error::Usb { .. } => EIO,
-                Xum1541Error::Init { .. } => EPERM,
-                Xum1541Error::Communication { .. } => EIO,
-                Xum1541Error::Timeout { .. } => ETIME,
-                Xum1541Error::DeviceAccess { kind } => match kind {
-                    DeviceAccessKind::NotFound { .. } => ENOENT,
-                    DeviceAccessKind::SerialMismatch { .. } => ENOENT,
-                    DeviceAccessKind::FirmwareVersion { .. } => ENODEV,
-                    DeviceAccessKind::Permission { .. } => EACCES,
-                },
-                Xum1541Error::Args { .. } => EINVAL,
-            },
-            CbmError::DeviceError { .. } => EIO,
-            CbmError::ChannelError { .. } => EBUSY,
-            CbmError::FileError { .. } => ENOENT,
-            CbmError::TimeoutError { .. } => EIO,
-            CbmError::InvalidOperation { .. } => ENOTSUP,
-            CbmError::Errno(errno) => *errno,
-            CbmError::ValidationError { .. } => EINVAL,
-            CbmError::StatusError { .. } => EPERM,
-            CbmError::UsbError(_msg) => ENXIO,
-            CbmError::ParseError { message: _ } => EINVAL,
-            CbmError::DriverNotOpen => ENXIO,
-        }
-    }
-
-    /// Helper function to format device number for display
-    fn format_device(device: Option<u8>) -> String {
-        match device {
-            Some(dev) => format!("Device {}", dev),
-            None => "n/a".to_string(),
+            xum @ Rs1541Error::Xum1541(_) => xum.to_errno(),
+            e @ Rs1541Error::Device { .. } => e.to_errno(),
+            Rs1541Error::File { .. } => EIO,
+            Rs1541Error::Timeout { .. } => ETIMEDOUT,
+            Rs1541Error::Validation { .. } => EINVAL,
+            Rs1541Error::Status { .. } => EIO,
+            Rs1541Error::Parse { message: _ } => EINVAL,
         }
     }
 }
 
-impl From<Box<dyn Any + Send>> for CbmError {
-    fn from(error: Box<dyn Any + Send>) -> Self {
-        let msg = if let Some(s) = error.downcast_ref::<String>() {
-            s.clone()
-        } else if let Some(s) = error.downcast_ref::<&str>() {
-            s.to_string()
-        } else {
-            "Unknown panic".to_string()
-        };
-
-        CbmError::DeviceError {
-            device: 0,
-            message: format!("Panic: {}", msg),
+impl DeviceError {
+    pub fn to_errno(&self) -> i32 {
+        match self {
+            DeviceError::GetStatusFailure { .. } => EIO,
+            DeviceError::InvalidDrive { .. } => EINVAL,
+            DeviceError::Read { .. } => EIO,
+            DeviceError::Write { .. } => EIO,
         }
+    }
+
+    fn with_device(&self, device: u8) -> Rs1541Error {
+        Rs1541Error::Device {
+            device,
+            error: self.clone(),
+        }
+    }
+
+    pub fn invalid_drive_num(device: u8, drive_num: u8) -> Rs1541Error {
+        DeviceError::InvalidDrive { drive_num }.with_device(device)
+    }
+
+    pub fn read_error(dc: DeviceChannel, message: String) -> Rs1541Error {
+        DeviceError::Read {
+            channel: dc.channel(),
+            message,
+        }
+        .with_device(dc.device())
+    }
+
+    pub fn write_error(dc: DeviceChannel, message: String) -> Rs1541Error {
+        DeviceError::Write {
+            channel: dc.channel(),
+            message,
+        }
+        .with_device(dc.device())
+    }
+
+    pub fn get_status_failure(device: u8, message: String) -> Rs1541Error {
+        DeviceError::GetStatusFailure { message }.with_device(device)
     }
 }
 
@@ -118,13 +125,9 @@ mod tests {
 
     #[test]
     fn test_errno() {
-        let error = CbmError::DeviceError {
-            device: 8,
+        let error = Rs1541Error::Validation {
             message: "Test error".to_string(),
         };
-        assert_eq!(error.to_errno(), EIO);
-
-        let error = CbmError::Errno(ENOENT);
-        assert_eq!(error.to_errno(), ENOENT);
+        assert_eq!(error.to_errno(), EINVAL);
     }
 }

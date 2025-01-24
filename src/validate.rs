@@ -1,6 +1,6 @@
 use log::trace;
 
-use crate::CbmError;
+use crate::Rs1541Error;
 use crate::{DEFAULT_DEVICE_NUM, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
 
 pub enum DeviceValidation {
@@ -17,15 +17,17 @@ pub enum DeviceValidation {
 pub fn validate_device(
     device: Option<u8>,
     validation: DeviceValidation,
-) -> Result<Option<u8>, CbmError> {
+) -> Result<Option<u8>, Rs1541Error> {
     match (device, validation) {
         (Some(nm), _) => {
             if nm < MIN_DEVICE_NUM || nm > MAX_DEVICE_NUM {
                 trace!("Device num out of allowed range {}", nm);
-                Err(CbmError::ValidationError(format!(
-                    "Device num must be between {} and {}",
-                    MIN_DEVICE_NUM, MAX_DEVICE_NUM
-                )))
+                Err(Rs1541Error::Validation {
+                    message: format!(
+                        "Device num must be between {} and {}",
+                        MIN_DEVICE_NUM, MAX_DEVICE_NUM
+                    ),
+                })
             } else {
                 trace!("Device num in allowed range {}", nm);
                 Ok(device)
@@ -33,7 +35,9 @@ pub fn validate_device(
         }
         (None, DeviceValidation::Required) => {
             trace!("Error - no device num supplied");
-            Err(CbmError::ValidationError(format!("No device num supplied")))
+            Err(Rs1541Error::Validation {
+                message: format!("No device num supplied"),
+            })
         }
         (None, DeviceValidation::Optional) => Ok(None),
         (None, DeviceValidation::Default) => Ok(Some(DEFAULT_DEVICE_NUM)),

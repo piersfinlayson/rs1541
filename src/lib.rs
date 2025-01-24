@@ -49,7 +49,7 @@
 //!
 //! ## Error Handling
 //! All operations that could fail return a [`Result`] type. Specific error
-//! conditions are represented by the [`CbmError`] type, which wraps both
+//! conditions are represented by the [`Rs1541Error`] type, which wraps both
 //! XUM1541 errors and drive-specific error codes.
 
 // Define rs1541 modules
@@ -61,20 +61,50 @@ pub mod string;
 pub mod util;
 pub mod validate;
 
-pub use cbm::{Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose};
+pub use cbm::{Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose, CbmDriveUnit};
 pub use cbmtype::{
-    CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmOperation, CbmOperationType,
+    CbmDeviceInfo, CbmDeviceType, Rs1541ErrorNumber, Rs1541ErrorNumberOk, CbmOperation, CbmOperationType,
     CbmStatus,
 };
 pub use disk::{CbmDirListing, CbmDiskHeader, CbmFileEntry, CbmFileMode, CbmFileType};
 /// Export the public API
-pub use error::CbmError;
+pub use error::{DeviceError, Rs1541Error};
 pub use string::{AsciiString, CbmString, PetsciiString};
 pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, petscii_to_ascii};
 pub use validate::{validate_device, DeviceValidation};
 
 // Export DeviceChannel as we use in our API
 pub use xum1541::buscmd::DeviceChannel;
+
+/// A trait to allow us to get the Bus as a reference from a MutexGuard and
+/// automatically convert the None case to a Rs1541Error
+trait BusGuardRef {
+    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Rs1541Error>;
+}
+
+impl BusGuardRef for parking_lot::MutexGuard<'_, Option<xum1541::Bus>> {
+    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Rs1541Error> {
+        self.as_ref()
+            .ok_or(Rs1541Error::Xum1541(xum1541::Xum1541Error::DeviceAccess {
+                kind: xum1541::DeviceAccessKind::NoDevice,
+            }))
+    }
+}
+
+/// A trait to allow us to get the Bus as a mutable reference from a
+/// MutexGuard and automatically convert the None case to a Rs1541Error
+trait BusGuardMut {
+    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Rs1541Error>;
+}
+
+impl<'a> BusGuardMut for parking_lot::MutexGuard<'_, Option<xum1541::Bus>> {
+    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Rs1541Error> {
+        self.as_mut()
+            .ok_or(Rs1541Error::Xum1541(xum1541::Xum1541Error::DeviceAccess {
+                kind: xum1541::DeviceAccessKind::NoDevice,
+            }))
+    }
+}
 
 /// Minimum device number supported by Commodore disk drives
 pub const MIN_DEVICE_NUM: u8 = 8;

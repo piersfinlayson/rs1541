@@ -7,8 +7,3 @@ Make memory_read/write functions handle both DOS 1 and DOS 2.  The cutoff where 
 Test my 2031 and 1540 differentiation code
 
 Deal with device/bus timeouts properly
-
-Tried to load a file and it wasn't found - got this
-- either my tracking of the state was wrong, or I handled the error wrong
-[2025-01-22T18:07:17Z WARN  xum1541::bus] Unisten called when bus was in state Idle
-Error: Device 8: Command error: Got error status: 62,FILE NOT FOUND,00,00

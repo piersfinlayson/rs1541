@@ -4,9 +4,9 @@
 //!
 //! Formats a disk and then returns the directory listing
 
-use rs1541::{AsciiString, Cbm, CbmError};
+use rs1541::{AsciiString, Cbm, Rs1541Error};
 
-fn main() -> Result<(), CbmError> {
+fn main() -> Result<(), Rs1541Error> {
     // Driver automatically opens on creation and closes on drop
     let cbm = Cbm::new()?;
 
@@ -20,7 +20,7 @@ fn main() -> Result<(), CbmError> {
     let ascii_disk_name = AsciiString::from_ascii_str(disk_name);
     let ascii_disk_id = AsciiString::from_ascii_str(disk_id);
     cbm.format_disk(8, &ascii_disk_name, &ascii_disk_id)?;
-    let status = cbm.get_status(8)?; 
+    let status = cbm.get_status(8)?;
     println!("Drive status after formatting: {}", status);
 
     // Read directory
