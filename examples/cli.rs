@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::{info, LevelFilter};
-use rs1541::{AsciiString, Cbm, Rs1541Error, CbmString, MIN_DEVICE_NUM, MAX_DEVICE_NUM};
+use rs1541::{AsciiString, Cbm, CbmString, Rs1541Error, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(Parser, Debug)]
@@ -101,23 +101,29 @@ fn main() -> Result<(), Rs1541Error> {
                         Err(e) => println!("Error: {}", e),
                     },
 
-                    "scan" | "a" => for id in MIN_DEVICE_NUM..=MAX_DEVICE_NUM {
-                        match cbm.identify(id) {
-                            Ok(info) => {
-                                println!(
-                                    "Found device {}: type: {} description: {}",
-                                    id, info.device_type, info.description);
-                            },
-                            Err(e) => match e {
-                                Rs1541Error::Device{ .. } => {
-                                    // We this error if the device doesn't exist
-                                },
-                                e => {
-                                    println!("Error: {}", e);
-                                },
-                            },  
-                        }
-                    },
+                    "scan" | "a" => {
+                        let (min, max) = if cmd.len() == 3 {
+                            match (cmd[1].parse::<u8>(), cmd[2].parse::<u8>()) {
+                                (Ok(min), Ok(max))
+                                    if min <= max
+                                        && (8..=15).contains(&min)
+                                        && (MIN_DEVICE_NUM..=MAX_DEVICE_NUM).contains(&max) =>
+                                {
+                                    (min, max)
+                                }
+                                _ => {
+                                    println!("Invalid device numbers. Must be between 8{}-{} and min must be <= max", MIN_DEVICE_NUM, MAX_DEVICE_NUM);
+                                    continue;
+                                }
+                            }
+                        } else if cmd.len() == 1 {
+                            (8, 11) // Default range
+                        } else {
+                            println!("Usage: scan [min max] - min and max must be between 8-15");
+                            continue;
+                        };
+                        scan(&cbm, min, max);
+                    }
 
                     "status" | "getstatus" | "s" => match cbm.get_status(device) {
                         Ok(status) => println!("Status: {}", status),
@@ -231,7 +237,7 @@ fn main() -> Result<(), Rs1541Error> {
                     "n" | "num" => {
                         device = if cmd.len() > 1 {
                             match cmd[1].parse::<u8>() {
-                                Ok(num) if (8..=15).contains(&num) => {
+                                Ok(num) if (MIN_DEVICE_NUM..=MAX_DEVICE_NUM).contains(&num) => {
                                     println!("Set device number to {}", num);
                                     num
                                 }
@@ -248,7 +254,10 @@ fn main() -> Result<(), Rs1541Error> {
 
                     "help" | "h" | "?" => {
                         println!("Available commands:");
-                        println!("  a|scan                   - Scan for devices");
+                        println!(
+                            "  a|scan [min max]         - Scan for devices (optional range {}-{})",
+                            MIN_DEVICE_NUM, MAX_DEVICE_NUM
+                        );
                         println!("  i|id|identify            - Get device info");
                         println!("  s|status                 - Get device status");
                         println!(
@@ -260,7 +269,10 @@ fn main() -> Result<(), Rs1541Error> {
                         println!("  f|format <name> <id>     - Format disk");
                         println!("  l|load <filename>        - Load file from disk");
                         println!("  p|print                  - Print config");
-                        println!("  n|num 8-15               - Change device number");
+                        println!(
+                            "  n|num {}-{}               - Change device number",
+                            MIN_DEVICE_NUM, MAX_DEVICE_NUM
+                        );
                         println!("  h|?|help                 - Show this help");
                         println!("  q|x|quit|exit            - Exit program");
                     }
@@ -284,4 +296,22 @@ fn main() -> Result<(), Rs1541Error> {
     }
 
     Ok(())
+}
+
+fn scan(cbm: &Cbm, min: u8, max: u8) {
+    let devices = cbm.scan_bus_range(min..=max);
+    if let Ok(devices) = devices {
+        if devices.len() > 0 {
+            for (id, info) in devices.iter() {
+                println!(
+                    "Found device {}: type: {} description: {}",
+                    id, info.device_type, info.description
+                );
+            }
+        } else {
+            println!("No devices found with numbers {}-{}", min, max);
+        }
+    } else if let Err(e) = devices {
+        println!("Hit fatal error scanning for devices: {e}");
+    }
 }

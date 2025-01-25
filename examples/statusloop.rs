@@ -1,11 +1,10 @@
+use clap::Parser;
 /// Loops retrieving status from a drive
-
-use rs1541::{Cbm, Rs1541Error, MIN_DEVICE_NUM, MAX_DEVICE_NUM};
+use rs1541::{Cbm, Rs1541Error, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
-use clap::Parser;
 
 pub const SLEEP_DURATION: Duration = Duration::from_millis(10);
 
@@ -29,11 +28,12 @@ fn main() -> Result<(), Rs1541Error> {
     let r = running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     // Create CBM interface
     let cbm = Cbm::new()?;
-    
+
     let mut success_count = 0u64;
     let mut fail_count = 0u64;
 
@@ -45,9 +45,11 @@ fn main() -> Result<(), Rs1541Error> {
         }
 
         // Update display (carriage return without newline)
-        print!("\rSuccesses: {:<20} Failures: {:<20}", success_count, fail_count);        // Ensure the output is displayed immediately
-        std::io::Write::flush(&mut std::io::stdout())
-            .expect("Failed to flush stdout");
+        print!(
+            "\rSuccesses: {:<20} Failures: {:<20}",
+            success_count, fail_count
+        ); // Ensure the output is displayed immediately
+        std::io::Write::flush(&mut std::io::stdout()).expect("Failed to flush stdout");
 
         // Wait 10ms
         sleep(SLEEP_DURATION);
@@ -55,6 +57,6 @@ fn main() -> Result<(), Rs1541Error> {
 
     // Print final newline
     println!();
-    
+
     Ok(())
 }

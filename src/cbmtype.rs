@@ -58,12 +58,15 @@ impl CbmStatus {
             });
         }
 
-        let number = parts[0].trim().parse::<u8>().map_err(|_| Rs1541Error::Parse {
-            message: format!(
-                "Device {device}: Invalid error number: {} within status: {}",
-                parts[0], clean_status
-            ),
-        })?;
+        let number = parts[0]
+            .trim()
+            .parse::<u8>()
+            .map_err(|_| Rs1541Error::Parse {
+                message: format!(
+                    "Device {device}: Invalid error number: {} within status: {}",
+                    parts[0], clean_status
+                ),
+            })?;
         let error_number = number.into();
         if error_number == Rs1541ErrorNumber::Unknown {
             warn!("Unknown Error Number (EN) returned by drive: {}", number);
@@ -71,12 +74,15 @@ impl CbmStatus {
 
         let message = parts[1].trim().to_string();
 
-        let track = parts[2].trim().parse::<u8>().map_err(|_| Rs1541Error::Parse {
-            message: format!(
-                "Device {device}: Invalid track: {} within status: {}",
-                parts[2], clean_status
-            ),
-        })?;
+        let track = parts[2]
+            .trim()
+            .parse::<u8>()
+            .map_err(|_| Rs1541Error::Parse {
+                message: format!(
+                    "Device {device}: Invalid track: {} within status: {}",
+                    parts[2], clean_status
+                ),
+            })?;
 
         let sector = parts[3]
             .trim()
@@ -484,9 +490,13 @@ impl fmt::Display for Rs1541ErrorNumber {
         let s = match self {
             Rs1541ErrorNumber::Ok => "OK",
             Rs1541ErrorNumber::FilesScratched => "FILES SCRATCHED",
-            Rs1541ErrorNumber::ReadErrorBlockHeaderNotFound => "READ ERROR (block header not found)",
+            Rs1541ErrorNumber::ReadErrorBlockHeaderNotFound => {
+                "READ ERROR (block header not found)"
+            }
             Rs1541ErrorNumber::ReadErrorNoSyncCharacter => "READ ERROR (no sync character)",
-            Rs1541ErrorNumber::ReadErrorDataBlockNotPresent => "READ ERROR (data block not present)",
+            Rs1541ErrorNumber::ReadErrorDataBlockNotPresent => {
+                "READ ERROR (data block not present)"
+            }
             Rs1541ErrorNumber::ReadErrorChecksumErrorInDataBlock => {
                 "READ ERROR (checksum error in data block)"
             }

@@ -106,19 +106,23 @@
 //! - Some advanced 1571/1581 features may not be supported
 //! - Drive/DOS commands are limited to standard CBM DOS operations
 //!
+use crate::channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
+use crate::string::{AsciiString, PetsciiString};
 use crate::validate::{validate_device, DeviceValidation};
 use crate::{
-    AsciiString, BusGuardMut, BusGuardRef, DeviceError, CbmDeviceInfo, CbmDeviceType,
-    CbmDirListing, Rs1541Error, Rs1541ErrorNumber, Rs1541ErrorNumberOk, CbmStatus, CbmString, PetsciiString,
+    BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDeviceType, CbmDirListing, CbmStatus, CbmString,
+    DeviceError, Rs1541Error, Rs1541ErrorNumber, Rs1541ErrorNumberOk, MAX_DEVICE_NUM,
 };
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
-use xum1541::{Bus, BusBuilder, DeviceChannel};
+use xum1541::constants::MIN_DEVICE_NUM;
+use xum1541::{Bus, BusBuilder, DeviceChannel, Xum1541Error};
 
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::RangeInclusive;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -339,6 +343,82 @@ impl Cbm {
         let mut bus = (&mut guard).bus_mut_or_err()?;
 
         Self::get_status_locked(&mut bus, device)
+    }
+
+    /// Scan the bus for any devices
+    ///
+    /// This function will scan the entire possible range of devices,
+    /// from 8 to 30.  If a device doesn't exist it takes about 1s to
+    /// detect this.
+    ///
+    /// If you want to reduce the amount of time taken and scan a partial
+    /// range, use [`Cbm::scan_bus_range`] instead.
+    ///
+    /// # Returns
+    /// - `HashMap<u8, CbmDevInfo>` - if successful
+    /// - `Rs1541Error`` - if a serious error occured.  If a Rs1541Error::Device error occurs, this is treated as non fatal and the query will continue
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let devices = cbm.scan_bus()?;
+    /// ```
+    pub fn scan_bus(&self) -> Result<HashMap<u8, CbmDeviceInfo>, Rs1541Error> {
+        self.scan_bus_range(MIN_DEVICE_NUM..=MAX_DEVICE_NUM)
+    }
+
+    /// Scans the bus for devices within the range specified
+    ///
+    /// # Arguments
+    /// - `range` - The inclusive range to scan for
+    ///
+    /// - `HashMap<u8, CbmDevInfo>` - if successful
+    /// - `Rs1541Error`` - if a serious error occured.  If a Rs1541Error::Device error occurs, this is treated as non fatal and the query will continue
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let devices = cbm.scan_bus()?;
+    /// ```
+    ///
+    /// # Note
+    /// See [`Cbm::scan_bus`] for more
+    pub fn scan_bus_range(
+        &self,
+        range: RangeInclusive<u8>,
+    ) -> Result<HashMap<u8, CbmDeviceInfo>, Rs1541Error> {
+        // Make return variable
+        let mut devices = HashMap::new();
+
+        // Check each device number
+        for device in range {
+            // Get device status to see if it exists
+            match self.get_status(device) {
+                // If hit a device error continue, otherwise propagate
+                Err(Rs1541Error::Device { device: _, error }) => match error {
+                    DeviceError::NoDevice => {
+                        trace!("No device {device} found");
+                        continue;
+                    }
+                    _ => warn!("Hit error querying device {device} status"),
+                },
+                Err(e) => return Err(e),
+                Ok(_) => (),
+            };
+
+            debug!("Device {device} exists - identify it");
+            let info = match self.identify(device) {
+                // If hit a device error continue, otherwise propagate
+                Err(Rs1541Error::Device { .. }) => {
+                    warn!("Hit error identifying device {device} status");
+                    continue;
+                }
+                Err(e) => return Err(e),
+                Ok(info) => info,
+            };
+
+            devices.insert(device, info);
+        }
+
+        Ok(devices)
     }
 
     /// Gets a directory listing from the device.
@@ -574,7 +654,12 @@ impl Cbm {
     /// actions or state change on the drive, immediately after doing an M-R
     /// we retrieve the status, expecting it to fail (it will likely return)
     /// a single byte - lik `\r`.
-    pub fn read_drive_memory(&self, device: u8, addr: u16, buf: &mut [u8]) -> Result<(), Rs1541Error> {
+    pub fn read_drive_memory(
+        &self,
+        device: u8,
+        addr: u16,
+        buf: &mut [u8],
+    ) -> Result<(), Rs1541Error> {
         let size = buf.len();
         trace!("Cbm::read_drive_memory: device {device} addr 0x{addr:04x} size {size}");
 
@@ -598,7 +683,7 @@ impl Cbm {
             let result = (|| {
                 // Read one byte at a time for DOS1 compatibility
                 let mut cmd = [b'M', b'-', b'R', addr_low, addr_high];
-                let dc = DeviceChannel::new(device, 15)?;
+                let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
                 for ii in 0..size {
                     debug!("Read from memory address 0x{addr_high:02x}{addr_low:02x}");
                     Self::send_command_petscii_locked(
@@ -631,11 +716,18 @@ impl Cbm {
                 Err(Rs1541Error::Parse { message }) => {
                     trace!("Got expectedly bad status when reading status after M-R: {message}")
                 }
-                Err(_) => {
-                    return Err(DeviceError::get_status_failure(
+                Err(e) => {
+                    let default_error = DeviceError::get_status_failure(
                         device,
-                        "Failed to get status after identify".into(),
-                    ))
+                        format!("Failed to get status after identify: {e}"),
+                    );
+                    return Err(match e {
+                        Rs1541Error::Device { device, error } => match error {
+                            DeviceError::NoDevice => DeviceError::no_device(device),
+                            _ => default_error,
+                        },
+                        _ => default_error,
+                    });
                 }
             }
 
@@ -645,7 +737,12 @@ impl Cbm {
     }
 
     /// Writes the required number of bytes to the device's memory
-    pub fn write_drive_memory(&self, device: u8, addr: u16, data: &[u8]) -> Result<(), Rs1541Error> {
+    pub fn write_drive_memory(
+        &self,
+        device: u8,
+        addr: u16,
+        data: &[u8],
+    ) -> Result<(), Rs1541Error> {
         // Split address into low and high bytes
         let addr_low = (addr & 0xFF) as u8;
         let addr_high = ((addr >> 8) & 0xFF) as u8;
@@ -665,7 +762,7 @@ impl Cbm {
             let mut guard = self.handle.lock();
             let bus = (&mut guard).bus_mut_or_err()?;
 
-            let dc = DeviceChannel::new(device, 15)?;
+            let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
             bus.talk(dc)?;
 
             // TODO - actually write the byte
@@ -696,7 +793,7 @@ impl Cbm {
     /// The command must be provided as a PetsciiString
     pub fn send_command_petscii(&self, device: u8, cmd: &PetsciiString) -> Result<(), Rs1541Error> {
         trace!("Cbm::send_command_petscii device {device} cmd {cmd}");
-        let dc = DeviceChannel::new(device, 15)?;
+        let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
 
         let mut guard = self.handle.lock();
         let bus = (&mut guard).bus_mut_or_err()?;
@@ -731,7 +828,11 @@ impl Cbm {
     ///
     /// # Errors
     /// Returns `Rs1541Error` if the device command fails
-    pub fn send_string_command_petscii(&self, device: u8, command: &str) -> Result<(), Rs1541Error> {
+    pub fn send_string_command_petscii(
+        &self,
+        device: u8,
+        command: &str,
+    ) -> Result<(), Rs1541Error> {
         self.send_command_petscii(
             device,
             &PetsciiString::from_petscii_bytes(command.as_bytes()),
@@ -818,7 +919,7 @@ impl Cbm {
         let mut data = Vec::new();
         loop {
             let buf = &mut [0u8; 256];
-            let count = bus.read(buf).map_err(|e| Rs1541Error::File {
+            let count = Self::bus_read_locked(bus, dc, buf).map_err(|e| Rs1541Error::File {
                 device,
                 message: format!("Read failed: {}", e),
             })?;
@@ -999,7 +1100,11 @@ impl Cbm {
     /// # Arguments
     /// * `device` - Device number
     /// * `filename` - Filename to open in ASCII format (lower case characters for regular character-based filenames).  Does not include suffix or file type
-    pub fn load_file_ascii(&self, device: u8, filename: &AsciiString) -> Result<Vec<u8>, Rs1541Error> {
+    pub fn load_file_ascii(
+        &self,
+        device: u8,
+        filename: &AsciiString,
+    ) -> Result<Vec<u8>, Rs1541Error> {
         trace!("Cbm::load_file device: {device} filename: {filename}");
 
         // Convert filename to petscii
@@ -1015,7 +1120,7 @@ impl Cbm {
         filename: &PetsciiString,
     ) -> Result<Vec<u8>, Rs1541Error> {
         // Open the file
-        let dc = DeviceChannel::new(device, 0)?;
+        let dc = DeviceChannel::new(device, CBM_CHANNEL_LOAD)?;
         Self::open_file_petscii_locked(bus, dc, filename)?;
 
         // Talk
@@ -1028,7 +1133,7 @@ impl Cbm {
         let mut buffer = Vec::new();
         let mut read_buf = [0u8; 256];
         let read_result = loop {
-            match bus.read(&mut read_buf) {
+            match Self::bus_read_locked(bus, dc, &mut read_buf) {
                 Ok(bytes_read) if bytes_read == 0 => break Ok(buffer),
                 Ok(bytes_read) => buffer.extend_from_slice(&read_buf[..bytes_read]),
                 Err(e) => {
@@ -1055,10 +1160,76 @@ impl Cbm {
 
 /// Internal functions
 impl Cbm {
+    // Handles figuring out if the read response means that we actually
+    // have no device.
+    //
+    // Our current way of figuring this out is if the bus is talking on
+    // channel 15 and if a read response gave 0 bytes
+    //
+    // We could also check whether the listener is the DeviceChannel
+    // passed into us, but we won't bother with that.
+    fn handle_read_result(
+        result: Result<usize, Xum1541Error>,
+        bus: &Bus,
+        dc: DeviceChannel,
+    ) -> Result<usize, Rs1541Error> {
+        match result {
+            Ok(0) => {
+                if let Some(talking_dc) = bus.is_talking() {
+                    if talking_dc.channel() == CBM_CHANNEL_CTRL {
+                        debug!("Bus is in Talking mode, device=15, and got a 0 byte read response");
+                        Err(DeviceError::no_device(dc.device()))
+                    } else {
+                        Ok(0)
+                    }
+                } else {
+                    Ok(0)
+                }
+            }
+            Ok(n) => Ok(n),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    fn bus_read_locked(
+        bus: &mut Bus,
+        dc: DeviceChannel,
+        buf: &mut [u8],
+    ) -> Result<usize, Rs1541Error> {
+        Self::handle_read_result(bus.read(buf), bus, dc)
+    }
+
+    fn bus_read_until_locked(
+        bus: &mut Bus,
+        dc: DeviceChannel,
+        buf: &mut Vec<u8>,
+        pattern: &[u8],
+    ) -> Result<usize, Rs1541Error> {
+        Self::handle_read_result(bus.read_until(buf, pattern), bus, dc)
+    }
+
+    #[allow(dead_code)]
+    fn bus_read_until_any_locked(
+        bus: &mut Bus,
+        dc: DeviceChannel,
+        buf: &mut Vec<u8>,
+        pattern: &[u8],
+    ) -> Result<usize, Rs1541Error> {
+        Self::handle_read_result(bus.read_until_any(buf, pattern), bus, dc)
+    }
+
     fn check_for_status_ok(bus: &mut Bus, device: u8, accept_73: bool) -> Result<(), Rs1541Error> {
         Self::get_status_locked(bus, device)
             .map_err(|e| {
-                DeviceError::get_status_failure(device, format!("Failed to get status: {e}"))
+                let default_error =
+                    DeviceError::get_status_failure(device, format!("Failed to get status: {e}"));
+                match e {
+                    Rs1541Error::Device { device, error } => match error {
+                        DeviceError::NoDevice => DeviceError::no_device(device),
+                        _ => default_error,
+                    },
+                    _ => default_error,
+                }
             })
             .and_then(|status| {
                 trace!("Status value {}", status);
@@ -1086,7 +1257,7 @@ impl Cbm {
         trace!("Cbm::get_status_locked device: {device}");
 
         // Set up DeviceChannel to read the status
-        let dc = DeviceChannel::new(device, 15)?;
+        let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
 
         // Put the drive into talk mode
         bus.talk(dc)?;
@@ -1095,10 +1266,11 @@ impl Cbm {
         // bytes). \r will be included if found
         let mut buf = vec![0u8; 64];
         let pattern = vec![b'\r'];
-        let bytes_read = bus.read_until(&mut buf, &pattern).inspect_err(|e| {
-            debug!("Hit error while in read_until() loop: {}", e);
-            let _ = bus.untalk();
-        })?;
+        let bytes_read =
+            Self::bus_read_until_locked(bus, dc, &mut buf, &pattern).inspect_err(|e| {
+                debug!("Hit error while in read_until() loop: {}", e);
+                let _ = bus.untalk();
+            })?;
         trace!("Read {} bytes of status", bytes_read);
 
         // Tell the drive to stop talking
@@ -1129,9 +1301,10 @@ impl Cbm {
 
             // Main reading loop
             loop {
-                let read_len = bus.read(&mut buf[read_total..]).inspect_err(|_| {
-                    let _ = bus.untalk();
-                })?;
+                let read_len =
+                    Self::bus_read_locked(bus, dc, &mut buf[read_total..]).inspect_err(|_| {
+                        let _ = bus.untalk();
+                    })?;
 
                 if read_len == 0 {
                     break;

@@ -1,8 +1,8 @@
 use crate::CbmStatus;
-use libc::{EINVAL, EIO, ETIMEDOUT};
+use libc::{EINVAL, EIO, ENODEV, ETIMEDOUT};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use xum1541::{DeviceChannel, Xum1541Error};
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Error, PartialEq, Serialize, Deserialize)]
 pub enum Rs1541Error {
@@ -54,6 +54,12 @@ pub enum DeviceError {
     /// Error writing to a channel
     #[error("Write error: Channel: {channel}, Error: {message}")]
     Write { channel: u8, message: String },
+
+    /// Our best bet is that the device doesn't exist.  This is based on
+    /// an attempt to retrieve status by putting the device into talk mode
+    /// on channel 15 and failing to read a single byte
+    #[error("Device does not exist (or at least isn't talking on channel 15)")]
+    NoDevice,
 }
 
 impl From<CbmStatus> for Rs1541Error {
@@ -84,6 +90,7 @@ impl DeviceError {
             DeviceError::InvalidDrive { .. } => EINVAL,
             DeviceError::Read { .. } => EIO,
             DeviceError::Write { .. } => EIO,
+            DeviceError::NoDevice { .. } => ENODEV,
         }
     }
 
@@ -116,6 +123,10 @@ impl DeviceError {
 
     pub fn get_status_failure(device: u8, message: String) -> Rs1541Error {
         DeviceError::GetStatusFailure { message }.with_device(device)
+    }
+
+    pub fn no_device(device: u8) -> Rs1541Error {
+        DeviceError::NoDevice.with_device(device)
     }
 }
 

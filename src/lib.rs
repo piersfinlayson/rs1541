@@ -55,19 +55,21 @@
 // Define rs1541 modules
 pub mod cbm;
 pub mod cbmtype;
+pub mod channel;
 pub mod disk;
 pub mod error;
 pub mod string;
 pub mod util;
 pub mod validate;
 
+/// Export the public API
 pub use cbm::{Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose, CbmDriveUnit};
 pub use cbmtype::{
-    CbmDeviceInfo, CbmDeviceType, Rs1541ErrorNumber, Rs1541ErrorNumberOk, CbmOperation, CbmOperationType,
-    CbmStatus,
+    CbmDeviceInfo, CbmDeviceType, CbmOperation, CbmOperationType, CbmStatus, Rs1541ErrorNumber,
+    Rs1541ErrorNumberOk,
 };
-pub use disk::{CbmDirListing, CbmDiskHeader, CbmFileEntry, CbmFileMode, CbmFileType};
-/// Export the public API
+pub use channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
+pub use disk::CbmDirListing;
 pub use error::{DeviceError, Rs1541Error};
 pub use string::{AsciiString, CbmString, PetsciiString};
 pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, petscii_to_ascii};
@@ -75,6 +77,8 @@ pub use validate::{validate_device, DeviceValidation};
 
 // Export DeviceChannel as we use in our API
 pub use xum1541::buscmd::DeviceChannel;
+pub use xum1541::DeviceAccessKind as Xum1541DeviceAccessKind;
+pub use xum1541::Xum1541Error;
 
 /// A trait to allow us to get the Bus as a reference from a MutexGuard and
 /// automatically convert the None case to a Rs1541Error
