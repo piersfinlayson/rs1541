@@ -110,8 +110,8 @@ use crate::channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
 use crate::string::{AsciiString, PetsciiString};
 use crate::validate::{validate_device, DeviceValidation};
 use crate::{
-    BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDirListing, CbmStatus, CbmString,
-    DeviceError, Error, CbmErrorNumberOk, MAX_DEVICE_NUM,
+    BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDirListing, CbmErrorNumberOk, CbmStatus, CbmString,
+    DeviceError, Error, MAX_DEVICE_NUM,
 };
 
 #[allow(unused_imports)]
@@ -368,7 +368,9 @@ impl Cbm {
     pub fn drive_exists(&self, device: u8) -> Result<bool, Error> {
         let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
         match self.bus_listen(dc) {
-            Err(Error::Xum1541(Xum1541Error::Communication { kind: CommunicationKind::StatusValue { .. }})) => {
+            Err(Error::Xum1541(Xum1541Error::Communication {
+                kind: CommunicationKind::StatusValue { .. },
+            })) => {
                 debug!("Device {device} doesn't exist");
                 Ok(false)
             }
@@ -376,7 +378,7 @@ impl Cbm {
             Ok(_) => {
                 self.bus_unlisten()?;
                 Ok(true)
-            },
+            }
         }
     }
 
@@ -657,12 +659,7 @@ impl Cbm {
     /// actions or state change on the drive, immediately after doing an M-R
     /// we retrieve the status, expecting it to fail (it will likely return)
     /// a single byte - lik `\r`.
-    pub fn read_drive_memory(
-        &self,
-        device: u8,
-        addr: u16,
-        buf: &mut [u8],
-    ) -> Result<(), Error> {
+    pub fn read_drive_memory(&self, device: u8, addr: u16, buf: &mut [u8]) -> Result<(), Error> {
         let size = buf.len();
         trace!("Cbm::read_drive_memory: device {device} addr 0x{addr:04x} size {size}");
 
@@ -740,12 +737,7 @@ impl Cbm {
     }
 
     /// Writes the required number of bytes to the device's memory
-    pub fn write_drive_memory(
-        &self,
-        device: u8,
-        addr: u16,
-        data: &[u8],
-    ) -> Result<(), Error> {
+    pub fn write_drive_memory(&self, device: u8, addr: u16, data: &[u8]) -> Result<(), Error> {
         // Split address into low and high bytes
         let addr_low = (addr & 0xFF) as u8;
         let addr_high = ((addr >> 8) & 0xFF) as u8;
@@ -831,11 +823,7 @@ impl Cbm {
     ///
     /// # Errors
     /// Returns `Error` if the device command fails
-    pub fn send_string_command_petscii(
-        &self,
-        device: u8,
-        command: &str,
-    ) -> Result<(), Error> {
+    pub fn send_string_command_petscii(&self, device: u8, command: &str) -> Result<(), Error> {
         self.send_command_petscii(
             device,
             &PetsciiString::from_petscii_bytes(command.as_bytes()),
@@ -968,12 +956,7 @@ impl Cbm {
     /// let data = vec![0x01, 0x08, 0x0C, 0x08, 0x0A, 0x00];
     /// cbm.write_file(8, "NEWFILE.PRG", &data)?;
     /// ```
-    pub fn write_file(
-        &self,
-        device: u8,
-        filename: &AsciiString,
-        data: &[u8],
-    ) -> Result<(), Error> {
+    pub fn write_file(&self, device: u8, filename: &AsciiString, data: &[u8]) -> Result<(), Error> {
         let dc = {
             let _bus = self.handle.lock().bus_ref_or_err()?;
 
@@ -1103,11 +1086,7 @@ impl Cbm {
     /// # Arguments
     /// * `device` - Device number
     /// * `filename` - Filename to open in ASCII format (lower case characters for regular character-based filenames).  Does not include suffix or file type
-    pub fn load_file_ascii(
-        &self,
-        device: u8,
-        filename: &AsciiString,
-    ) -> Result<Vec<u8>, Error> {
+    pub fn load_file_ascii(&self, device: u8, filename: &AsciiString) -> Result<Vec<u8>, Error> {
         trace!("Cbm::load_file device: {device} filename: {filename}");
 
         // Convert filename to petscii
@@ -1159,7 +1138,6 @@ impl Cbm {
 
         Ok(read_result)
     }
-
 }
 
 /// Internal functions
@@ -1226,11 +1204,7 @@ impl Cbm {
         }
     }
 
-    fn bus_read_locked(
-        bus: &mut Bus,
-        dc: DeviceChannel,
-        buf: &mut [u8],
-    ) -> Result<usize, Error> {
+    fn bus_read_locked(bus: &mut Bus, dc: DeviceChannel, buf: &mut [u8]) -> Result<usize, Error> {
         Self::handle_read_result(bus.read(buf), bus, dc)
     }
 

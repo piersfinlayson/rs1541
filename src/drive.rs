@@ -1,11 +1,11 @@
 use crate::cbm::Cbm;
-use crate::cbmtype::{CbmDeviceType, CbmStatus, CbmErrorNumber, CbmErrorNumberOk};
+use crate::cbmtype::{CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmStatus};
 use crate::channel::CbmChannelManager;
-use crate::error::Error;
+use crate::error::{DeviceError, Error};
 
+use parking_lot::Mutex;
 use std::fmt;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 /// Represents a physical drive unit
 ///
@@ -61,6 +61,20 @@ impl fmt::Display for CbmDriveUnit {
 /// ```
 ///
 impl CbmDriveUnit {
+    /// Tests whether a drive exists and if so, detects the type and creates
+    /// a CbmDriveUnit object for it.
+    pub fn try_from_bus(cbm: &Cbm, device: u8) -> Result<Self, Error> {
+        if cbm.drive_exists(device)? {
+            let info = cbm.identify(device)?;
+            Ok(Self::new(device, info.device_type))
+        } else {
+            Err(Error::Device {
+                device,
+                error: DeviceError::NoDevice,
+            })
+        }
+    }
+
     /// Creates a new drive unit instance.
     ///
     /// This function creates a new drive unit with the specified device number
@@ -77,7 +91,7 @@ impl CbmDriveUnit {
     /// ```ignore
     /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
     /// ```
-    pub fn new(device_number: u8, device_type: CbmDeviceType) -> Self {
+    fn new(device_number: u8, device_type: CbmDeviceType) -> Self {
         // Test whether this device is actually attached
         Self {
             device_number,

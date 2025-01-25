@@ -58,15 +58,12 @@ impl CbmStatus {
             });
         }
 
-        let number = parts[0]
-            .trim()
-            .parse::<u8>()
-            .map_err(|_| Error::Parse {
-                message: format!(
-                    "Device {device}: Invalid error number: {} within status: {}",
-                    parts[0], clean_status
-                ),
-            })?;
+        let number = parts[0].trim().parse::<u8>().map_err(|_| Error::Parse {
+            message: format!(
+                "Device {device}: Invalid error number: {} within status: {}",
+                parts[0], clean_status
+            ),
+        })?;
         let error_number = number.into();
         if error_number == CbmErrorNumber::Unknown {
             warn!("Unknown Error Number (EN) returned by drive: {}", number);
@@ -74,15 +71,12 @@ impl CbmStatus {
 
         let message = parts[1].trim().to_string();
 
-        let track = parts[2]
-            .trim()
-            .parse::<u8>()
-            .map_err(|_| Error::Parse {
-                message: format!(
-                    "Device {device}: Invalid track: {} within status: {}",
-                    parts[2], clean_status
-                ),
-            })?;
+        let track = parts[2].trim().parse::<u8>().map_err(|_| Error::Parse {
+            message: format!(
+                "Device {device}: Invalid track: {} within status: {}",
+                parts[2], clean_status
+            ),
+        })?;
 
         let sector = parts[3]
             .trim()
@@ -490,13 +484,9 @@ impl fmt::Display for CbmErrorNumber {
         let s = match self {
             CbmErrorNumber::Ok => "OK",
             CbmErrorNumber::FilesScratched => "FILES SCRATCHED",
-            CbmErrorNumber::ReadErrorBlockHeaderNotFound => {
-                "READ ERROR (block header not found)"
-            }
+            CbmErrorNumber::ReadErrorBlockHeaderNotFound => "READ ERROR (block header not found)",
             CbmErrorNumber::ReadErrorNoSyncCharacter => "READ ERROR (no sync character)",
-            CbmErrorNumber::ReadErrorDataBlockNotPresent => {
-                "READ ERROR (data block not present)"
-            }
+            CbmErrorNumber::ReadErrorDataBlockNotPresent => "READ ERROR (data block not present)",
             CbmErrorNumber::ReadErrorChecksumErrorInDataBlock => {
                 "READ ERROR (checksum error in data block)"
             }

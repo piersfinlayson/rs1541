@@ -57,22 +57,22 @@ pub mod cbm;
 pub mod cbmtype;
 pub mod channel;
 pub mod disk;
+pub mod drive;
 pub mod error;
 pub mod string;
 pub mod util;
 pub mod validate;
-pub mod drive;
 
 /// Export the public API
 pub use cbm::Cbm;
-pub use channel::{CbmChannel, CbmChannelManager, CbmChannelPurpose};
-pub use drive::CbmDriveUnit;
 pub use cbmtype::{
-    CbmDeviceInfo, CbmDeviceType, CbmOperation, CbmOperationType, CbmStatus, CbmErrorNumber,
-    CbmErrorNumberOk,
+    CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmOperation, CbmOperationType,
+    CbmStatus,
 };
+pub use channel::{CbmChannel, CbmChannelManager, CbmChannelPurpose};
 pub use channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
-pub use disk::{CbmDiskHeader, CbmFileEntry, CbmDirListing};
+pub use disk::{CbmDirListing, CbmDiskHeader, CbmFileEntry};
+pub use drive::CbmDriveUnit;
 pub use error::{DeviceError, Error};
 pub use string::{AsciiString, CbmString, PetsciiString};
 pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, petscii_to_ascii};
