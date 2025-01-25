@@ -81,6 +81,9 @@ impl CbmDriveUnit {
     /// and type. It initializes the channel manager but does not perform any
     /// hardware communication.
     ///
+    /// You may prefer [`CbmDriveUnit::try_from_bus`] as this will check the 
+    /// device exists and automatically get it's type before creating.
+    /// 
     /// # Arguments
     ///
     /// * `device_number` - The IEC device number
@@ -91,7 +94,7 @@ impl CbmDriveUnit {
     /// ```ignore
     /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
     /// ```
-    fn new(device_number: u8, device_type: CbmDeviceType) -> Self {
+    pub fn new(device_number: u8, device_type: CbmDeviceType) -> Self {
         // Test whether this device is actually attached
         Self {
             device_number,
