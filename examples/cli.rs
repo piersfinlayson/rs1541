@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::{info, LevelFilter};
-use rs1541::{AsciiString, Cbm, Rs1541Error, CbmString};
+use rs1541::{AsciiString, Cbm, Rs1541Error, CbmString, MIN_DEVICE_NUM, MAX_DEVICE_NUM};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(Parser, Debug)]
@@ -109,7 +109,7 @@ fn main() -> Result<(), Rs1541Error> {
                                     id, info.device_type, info.description);
                             },
                             Err(e) => match e {
-                                CbmError::OtherError{ .. } => {
+                                Rs1541Error::Device{ .. } => {
                                     // We this error if the device doesn't exist
                                 },
                                 e => {

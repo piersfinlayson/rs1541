@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.0] - 2025-01-??
 ###
 - Added bus scan function to examples/cli.rs
+- Added examples/statusloop.rs
 
 ### Changed
 - Moved away from opencbm bindings to A Rust native xum1541 implementation (xum1541)

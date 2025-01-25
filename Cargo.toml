@@ -21,7 +21,7 @@ name = "rs1541"
 path = "src/lib.rs"
 
 [dependencies]
-xum1541 = { version = "0.1.1" }
+xum1541 = { version = "0.1.2", path = "../xum1541" }
 log = "0.4"
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
@@ -38,3 +38,4 @@ rustyline = "15"  # Required by examples/cli
 anyhow = "1.0"  # Required by examples/cli
 clap = { version = "4.5", features = ["derive"] }  # Required by examples/cli
 env_logger = "0.11"  # Required by examples/cli
+ctrlc = "3.4" # Required by examples/statusloop
