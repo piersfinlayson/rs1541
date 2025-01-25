@@ -111,7 +111,7 @@ use crate::string::{AsciiString, PetsciiString};
 use crate::validate::{validate_device, DeviceValidation};
 use crate::{
     BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDirListing, CbmStatus, CbmString,
-    DeviceError, Error, ErrorNumberOk, MAX_DEVICE_NUM,
+    DeviceError, Error, CbmErrorNumberOk, MAX_DEVICE_NUM,
 };
 
 #[allow(unused_imports)]
@@ -905,7 +905,7 @@ impl Cbm {
 
         // Check status after open
         let status = self.get_status(device)?;
-        if status.is_ok() != ErrorNumberOk::Ok {
+        if status.is_ok() != CbmErrorNumberOk::Ok {
             return Err(status.into());
         }
 
@@ -986,7 +986,7 @@ impl Cbm {
 
         // Check status after open
         let status = self.get_status(device)?;
-        if status.is_ok() != ErrorNumberOk::Ok {
+        if status.is_ok() != CbmErrorNumberOk::Ok {
             return Err(status.into());
         }
 

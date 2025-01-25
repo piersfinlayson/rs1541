@@ -7,7 +7,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CbmStatus {
     pub number: u8,
-    pub error_number: ErrorNumber,
+    pub error_number: CbmErrorNumber,
     pub message: String,
     pub track: u8,
     pub sector: u8,
@@ -19,7 +19,7 @@ impl Default for CbmStatus {
     fn default() -> Self {
         CbmStatus {
             number: 255,
-            error_number: ErrorNumber::default(),
+            error_number: CbmErrorNumber::default(),
             message: "none".to_string(),
             track: 0,
             sector: 0,
@@ -68,7 +68,7 @@ impl CbmStatus {
                 ),
             })?;
         let error_number = number.into();
-        if error_number == ErrorNumber::Unknown {
+        if error_number == CbmErrorNumber::Unknown {
             warn!("Unknown Error Number (EN) returned by drive: {}", number);
         }
 
@@ -106,20 +106,20 @@ impl CbmStatus {
         })
     }
 
-    pub fn is_ok(&self) -> ErrorNumberOk {
+    pub fn is_ok(&self) -> CbmErrorNumberOk {
         if self.number < 20 {
-            ErrorNumberOk::Ok
+            CbmErrorNumberOk::Ok
         } else if self.number == 73 {
-            ErrorNumberOk::Number73
+            CbmErrorNumberOk::Number73
         } else {
-            ErrorNumberOk::Err
+            CbmErrorNumberOk::Err
         }
     }
 
     /// Useful for checking drive gave us any valid response
     /// This means it's working even if the disk isn't inserted, is corrupt, etc
     pub fn is_valid_cbm(&self) -> bool {
-        self.error_number != ErrorNumber::Unknown
+        self.error_number != CbmErrorNumber::Unknown
     }
 
     pub fn track(&self) -> Option<u8> {
@@ -139,7 +139,7 @@ impl CbmStatus {
     }
 
     pub fn files_scratched(&self) -> Option<u8> {
-        if self.error_number == ErrorNumber::FilesScratched {
+        if self.error_number == CbmErrorNumber::FilesScratched {
             Some(self.track)
         } else {
             None
@@ -179,16 +179,16 @@ impl fmt::Display for CbmStatus {
 impl Into<Result<(), Error>> for CbmStatus {
     fn into(self) -> Result<(), Error> {
         match self.is_ok() {
-            ErrorNumberOk::Ok => Ok(()),
-            ErrorNumberOk::Number73 => Err(self.into()),
-            ErrorNumberOk::Err => Err(self.into()),
+            CbmErrorNumberOk::Ok => Ok(()),
+            CbmErrorNumberOk::Number73 => Err(self.into()),
+            CbmErrorNumberOk::Err => Err(self.into()),
         }
     }
 }
 
 impl CbmStatus {
     pub fn into_73_ok(self) -> Result<(), Error> {
-        if self.is_ok() == ErrorNumberOk::Number73 {
+        if self.is_ok() == CbmErrorNumberOk::Number73 {
             Ok(())
         } else {
             Err(self.into())
@@ -399,7 +399,7 @@ impl CbmDeviceType {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ErrorNumber {
+pub enum CbmErrorNumber {
     Ok = 0,
     FilesScratched = 1,
     ReadErrorBlockHeaderNotFound = 20,
@@ -437,13 +437,13 @@ pub enum ErrorNumber {
     Unknown = 255,
 }
 
-impl Default for ErrorNumber {
+impl Default for CbmErrorNumber {
     fn default() -> Self {
-        ErrorNumber::Unknown
+        CbmErrorNumber::Unknown
     }
 }
 
-impl From<u8> for ErrorNumber {
+impl From<u8> for CbmErrorNumber {
     fn from(value: u8) -> Self {
         match value {
             0 => Self::Ok,
@@ -485,61 +485,61 @@ impl From<u8> for ErrorNumber {
     }
 }
 
-impl fmt::Display for ErrorNumber {
+impl fmt::Display for CbmErrorNumber {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            ErrorNumber::Ok => "OK",
-            ErrorNumber::FilesScratched => "FILES SCRATCHED",
-            ErrorNumber::ReadErrorBlockHeaderNotFound => {
+            CbmErrorNumber::Ok => "OK",
+            CbmErrorNumber::FilesScratched => "FILES SCRATCHED",
+            CbmErrorNumber::ReadErrorBlockHeaderNotFound => {
                 "READ ERROR (block header not found)"
             }
-            ErrorNumber::ReadErrorNoSyncCharacter => "READ ERROR (no sync character)",
-            ErrorNumber::ReadErrorDataBlockNotPresent => {
+            CbmErrorNumber::ReadErrorNoSyncCharacter => "READ ERROR (no sync character)",
+            CbmErrorNumber::ReadErrorDataBlockNotPresent => {
                 "READ ERROR (data block not present)"
             }
-            ErrorNumber::ReadErrorChecksumErrorInDataBlock => {
+            CbmErrorNumber::ReadErrorChecksumErrorInDataBlock => {
                 "READ ERROR (checksum error in data block)"
             }
-            ErrorNumber::ReadErrorByteDecodingError => "READ ERROR (byte decoding error)",
-            ErrorNumber::WriteErrorWriteVerifyError => "WRITE ERROR (write verify error)",
-            ErrorNumber::WriteProtectOn => "WRITE PROTECT ON",
-            ErrorNumber::ReadErrorChecksumErrorInHeader => {
+            CbmErrorNumber::ReadErrorByteDecodingError => "READ ERROR (byte decoding error)",
+            CbmErrorNumber::WriteErrorWriteVerifyError => "WRITE ERROR (write verify error)",
+            CbmErrorNumber::WriteProtectOn => "WRITE PROTECT ON",
+            CbmErrorNumber::ReadErrorChecksumErrorInHeader => {
                 "READ ERROR (checksum error in header)"
             }
-            ErrorNumber::WriteErrorLongDataBlock => "WRITE ERROR (long data block)",
-            ErrorNumber::DiskIdMismatch => "DISK ID MISMATCH",
-            ErrorNumber::SyntaxErrorGeneralSyntax => "SYNTAX ERROR (general syntax)",
-            ErrorNumber::SyntaxErrorInvalidCommand => "SYNTAX ERROR (invalid command)",
-            ErrorNumber::SyntaxErrorLongLine => "SYNTAX ERROR (long line)",
-            ErrorNumber::SyntaxErrorInvalidFileName => "SYNTAX ERROR (invalid file name)",
-            ErrorNumber::SyntaxErrorNoFileGiven => "SYNTAX ERROR (no file given))",
-            ErrorNumber::SyntaxErrorInvalidCommandChannel15 => {
+            CbmErrorNumber::WriteErrorLongDataBlock => "WRITE ERROR (long data block)",
+            CbmErrorNumber::DiskIdMismatch => "DISK ID MISMATCH",
+            CbmErrorNumber::SyntaxErrorGeneralSyntax => "SYNTAX ERROR (general syntax)",
+            CbmErrorNumber::SyntaxErrorInvalidCommand => "SYNTAX ERROR (invalid command)",
+            CbmErrorNumber::SyntaxErrorLongLine => "SYNTAX ERROR (long line)",
+            CbmErrorNumber::SyntaxErrorInvalidFileName => "SYNTAX ERROR (invalid file name)",
+            CbmErrorNumber::SyntaxErrorNoFileGiven => "SYNTAX ERROR (no file given))",
+            CbmErrorNumber::SyntaxErrorInvalidCommandChannel15 => {
                 "SYNTAX ERROR (invalid command on channel 15)"
             }
-            ErrorNumber::RecordNotPresent => "RECORD NOT PRESENT",
-            ErrorNumber::OverflowInRecord => "OVERFLOW IN RECORD",
-            ErrorNumber::FileTooLarge => "FILE TOO LARGE",
-            ErrorNumber::WriteFileOpen => "WRITE FILE OPEN",
-            ErrorNumber::FileNotOpen => "FILE NOT OPEN",
-            ErrorNumber::FileNotFound => "FILE NOT FOUND",
-            ErrorNumber::FileExists => "FILE EXISTS",
-            ErrorNumber::FileTypeMismatch => "FILE TYPE MISMATCH",
-            ErrorNumber::NoBlock => "NO BLOCK",
-            ErrorNumber::IllegalTrackAndSector => "ILLEGAL TRACK AND SECTOR",
-            ErrorNumber::IllegalSystemTOrS => "ILLEGAL SYSTEM T OR S",
-            ErrorNumber::NoChannel => "NO CHANNEL",
-            ErrorNumber::DirectoryError => "DIRECTORY ERROR",
-            ErrorNumber::DiskFull => "DISK FULL",
-            ErrorNumber::DosMismatch => "DOS MISMATCH",
-            ErrorNumber::DriveNotReady => "DRIVE NOT READY",
-            ErrorNumber::Unknown => "unknown",
+            CbmErrorNumber::RecordNotPresent => "RECORD NOT PRESENT",
+            CbmErrorNumber::OverflowInRecord => "OVERFLOW IN RECORD",
+            CbmErrorNumber::FileTooLarge => "FILE TOO LARGE",
+            CbmErrorNumber::WriteFileOpen => "WRITE FILE OPEN",
+            CbmErrorNumber::FileNotOpen => "FILE NOT OPEN",
+            CbmErrorNumber::FileNotFound => "FILE NOT FOUND",
+            CbmErrorNumber::FileExists => "FILE EXISTS",
+            CbmErrorNumber::FileTypeMismatch => "FILE TYPE MISMATCH",
+            CbmErrorNumber::NoBlock => "NO BLOCK",
+            CbmErrorNumber::IllegalTrackAndSector => "ILLEGAL TRACK AND SECTOR",
+            CbmErrorNumber::IllegalSystemTOrS => "ILLEGAL SYSTEM T OR S",
+            CbmErrorNumber::NoChannel => "NO CHANNEL",
+            CbmErrorNumber::DirectoryError => "DIRECTORY ERROR",
+            CbmErrorNumber::DiskFull => "DISK FULL",
+            CbmErrorNumber::DosMismatch => "DOS MISMATCH",
+            CbmErrorNumber::DriveNotReady => "DRIVE NOT READY",
+            CbmErrorNumber::Unknown => "unknown",
         };
         write!(f, "{}", s)
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ErrorNumberOk {
+pub enum CbmErrorNumberOk {
     Ok,
     Err,
     Number73,
@@ -583,19 +583,19 @@ mod tests {
         assert_eq!(status.number, 21);
         assert_eq!(
             status.error_number,
-            ErrorNumber::ReadErrorNoSyncCharacter
+            CbmErrorNumber::ReadErrorNoSyncCharacter
         );
         assert_eq!(status.message, "READ ERROR");
         assert_eq!(status.track, 18);
         assert_eq!(status.sector, 0);
         assert_eq!(status.device, 8);
-        assert_eq!(status.is_ok(), ErrorNumberOk::Err);
+        assert_eq!(status.is_ok(), CbmErrorNumberOk::Err);
     }
 
     #[test]
     fn test_ok_status() {
         let status = CbmStatus::try_from(("00,OK,00,00", 8)).unwrap();
-        assert_eq!(status.is_ok(), ErrorNumberOk::Ok);
+        assert_eq!(status.is_ok(), CbmErrorNumberOk::Ok);
         assert_eq!(status.device, 8);
         assert_eq!(status.to_string(), "00,OK,00,00");
     }
@@ -603,8 +603,8 @@ mod tests {
     #[test]
     fn test_73_status() {
         let status = CbmStatus::try_from(("73,DOS MISMATCH,00,00", 8)).unwrap();
-        assert_eq!(status.error_number, ErrorNumber::DosMismatch);
-        assert_eq!(status.is_ok(), ErrorNumberOk::Number73);
+        assert_eq!(status.error_number, CbmErrorNumber::DosMismatch);
+        assert_eq!(status.is_ok(), CbmErrorNumberOk::Number73);
         assert_eq!(status.to_string(), "73,DOS MISMATCH,00,00");
         assert_eq!(status.message, "DOS MISMATCH");
         assert_eq!(status.device, 8);
@@ -615,7 +615,7 @@ mod tests {
         let status = CbmStatus::try_from(("01,FILES SCRATCHED,03,00", 8)).unwrap();
         assert_eq!(status.files_scratched(), Some(3));
         assert_eq!(status.message, "FILES SCRATCHED");
-        assert_eq!(status.is_ok(), ErrorNumberOk::Ok);
+        assert_eq!(status.is_ok(), CbmErrorNumberOk::Ok);
         assert_eq!(status.track, 3);
         assert_eq!(status.sector, 0);
         assert_eq!(status.device, 8);
@@ -626,7 +626,7 @@ mod tests {
         let status = CbmStatus::try_from(("21,READ ERROR,18,04", 8)).unwrap();
         assert_eq!(status.files_scratched(), None);
         assert_eq!(status.to_string(), "21,READ ERROR,18,04");
-        assert_eq!(status.is_ok(), ErrorNumberOk::Err);
+        assert_eq!(status.is_ok(), CbmErrorNumberOk::Err);
         assert_eq!(status.track, 18);
         assert_eq!(status.sector, 4);
         assert_eq!(status.device, 8);
@@ -641,7 +641,7 @@ mod tests {
 
         let status = CbmStatus {
             number: 21,
-            error_number: ErrorNumber::ReadErrorNoSyncCharacter,
+            error_number: CbmErrorNumber::ReadErrorNoSyncCharacter,
             message: "READ ERROR".to_string(),
             track: 18,
             sector: 0,

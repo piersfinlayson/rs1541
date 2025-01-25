@@ -1,5 +1,5 @@
 use crate::cbm::Cbm;
-use crate::cbmtype::{CbmDeviceType, CbmStatus, ErrorNumber, ErrorNumberOk};
+use crate::cbmtype::{CbmDeviceType, CbmStatus, CbmErrorNumber, CbmErrorNumberOk};
 use crate::channel::CbmChannelManager;
 use crate::error::Error;
 
@@ -140,18 +140,18 @@ impl CbmDriveUnit {
     /// # Example
     ///
     /// ```no_run
-    /// use rs1541::{Cbm, CbmDriveUnit, CbmDeviceType, ErrorNumber};
+    /// use rs1541::{Cbm, CbmDriveUnit, CbmDeviceType, CbmErrorNumber};
     /// let mut cbm = Cbm::new().unwrap();
     /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
     ///
     /// // Initialize both drives, ignoring "drive not ready" errors
-    /// let status_vec = drive.send_init(&mut cbm, &vec![ErrorNumber::DriveNotReady]);
+    /// let status_vec = drive.send_init(&mut cbm, &vec![CbmErrorNumber::DriveNotReady]);
     /// // Now process the status_vec
     /// ```
     pub fn send_init(
         &mut self,
         cbm: &mut Cbm,
-        ignore_errors: &Vec<ErrorNumber>,
+        ignore_errors: &Vec<CbmErrorNumber>,
     ) -> Vec<Result<CbmStatus, Error>> {
         self.busy = true;
         let mut results = Vec::new();
@@ -161,7 +161,7 @@ impl CbmDriveUnit {
             let status = match cbm.send_string_command_ascii(self.device_number, &cmd) {
                 Ok(_) => match cbm.get_status(self.device_number) {
                     Ok(status) => {
-                        if status.is_ok() != ErrorNumberOk::Ok
+                        if status.is_ok() != CbmErrorNumberOk::Ok
                             && !ignore_errors.contains(&status.error_number)
                         {
                             Err(status.into())

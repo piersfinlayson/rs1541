@@ -68,8 +68,8 @@ pub use cbm::Cbm;
 pub use channel::{CbmChannel, CbmChannelManager, CbmChannelPurpose};
 pub use drive::CbmDriveUnit;
 pub use cbmtype::{
-    CbmDeviceInfo, CbmDeviceType, CbmOperation, CbmOperationType, CbmStatus, ErrorNumber,
-    ErrorNumberOk,
+    CbmDeviceInfo, CbmDeviceType, CbmOperation, CbmOperationType, CbmStatus, CbmErrorNumber,
+    CbmErrorNumberOk,
 };
 pub use channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
 pub use disk::{CbmDiskHeader, CbmFileEntry, CbmDirListing};
