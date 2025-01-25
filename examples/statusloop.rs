@@ -1,6 +1,6 @@
 use clap::Parser;
 /// Loops retrieving status from a drive
-use rs1541::{Cbm, Rs1541Error, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
+use rs1541::{Cbm, Error, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
@@ -15,7 +15,7 @@ struct Args {
     device: u8,
 }
 
-fn main() -> Result<(), Rs1541Error> {
+fn main() -> Result<(), Error> {
     // Parse command line arguments
     let args = Args::parse();
     if args.device < MIN_DEVICE_NUM || args.device > MAX_DEVICE_NUM {

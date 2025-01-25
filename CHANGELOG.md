@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 - [`Cbm::scan_bus`] and [`Cbm::scan_bus_range`]
 - Added bus scan function to examples/cli.rs
 - Added examples/statusloop.rs
+- Change Rs1541Error to Error
 
 ### Changed
 - Moved away from opencbm bindings to A Rust native xum1541 implementation (xum1541)

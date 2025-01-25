@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::{info, LevelFilter};
-use rs1541::{AsciiString, Cbm, CbmString, Rs1541Error, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
+use rs1541::{AsciiString, Cbm, CbmString, Error, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(Parser, Debug)]
@@ -15,7 +15,7 @@ struct Args {
     verbose: u8,
 }
 
-fn main() -> Result<(), Rs1541Error> {
+fn main() -> Result<(), Error> {
     let args = Args::parse();
     let mut device = args.device;
 

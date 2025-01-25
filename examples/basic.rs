@@ -42,15 +42,15 @@
 //!
 //! This example includes some simple error handling
 
-use rs1541::{Cbm, DeviceError, Rs1541Error, Xum1541Error};
+use rs1541::{Cbm, DeviceError, Error, Xum1541Error};
 use std::process::exit;
-fn main() -> Result<(), Rs1541Error> {
+fn main() -> Result<(), Error> {
     env_logger::init();
     log::info!("Started logging");
 
     // Driver automatically opens on creation and closes on drop
     let cbm = match Cbm::new() {
-        Err(Rs1541Error::Xum1541(error)) => match error {
+        Err(Error::Xum1541(error)) => match error {
             Xum1541Error::DeviceAccess { .. } | Xum1541Error::Usb(_) => {
                 println!("Failed to connect to xum1541 device\nError: {error}");
                 exit(1);
@@ -70,7 +70,7 @@ fn main() -> Result<(), Rs1541Error> {
     // Get drive information
     let id = cbm.identify(8);
     let id = match id {
-        Err(Rs1541Error::Device {
+        Err(Error::Device {
             error: DeviceError::NoDevice,
             ..
         }) => {

@@ -1,7 +1,7 @@
 //! Contains types and functions for working with Commodore files and
 //! directories
 
-use crate::error::Rs1541Error;
+use crate::error::Error;
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use std::fmt;
@@ -303,11 +303,11 @@ impl CbmDirListing {
     /// # Returns
     ///
     /// * `Ok(CbmDirListing)` if parsing succeeds
-    /// * `Err(Rs1541Error)` if the listing cannot be parsed
+    /// * `Err(Error)` if the listing cannot be parsed
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error::Parse` if:
+    /// Returns `Error::Parse` if:
     /// - The header line is missing or invalid
     /// - The blocks free line is missing or invalid
     /// - The listing format doesn't match expectations
@@ -330,7 +330,7 @@ impl CbmDirListing {
     /// assert_eq!(dir.files.len(), 2);
     /// assert_eq!(dir.blocks_free, 664);
     /// ```
-    pub fn parse(input: &str) -> Result<Self, Rs1541Error> {
+    pub fn parse(input: &str) -> Result<Self, Error> {
         trace!("CbmDirListing::parse input.len() {}", input.len());
         trace!("Input:\n{}", input);
         let mut lines = input.lines();
@@ -338,7 +338,7 @@ impl CbmDirListing {
         // Parse header
         let header = Self::parse_header(lines.next().ok_or_else(|| {
             debug!("CbmDirListing::parse Missing header line");
-            Rs1541Error::Parse {
+            Error::Parse {
                 message: "Missing header line".to_string(),
             }
         })?)?;
@@ -358,7 +358,7 @@ impl CbmDirListing {
 
         let blocks_free = blocks_free.ok_or_else(|| {
             debug!("CbmDirListing::parse Missing blocks free line");
-            Rs1541Error::Parse {
+            Error::Parse {
                 message: "Missing blocks free line".to_string(),
             }
         })?;
@@ -370,21 +370,21 @@ impl CbmDirListing {
         })
     }
 
-    fn parse_header(line: &str) -> Result<CbmDiskHeader, Rs1541Error> {
+    fn parse_header(line: &str) -> Result<CbmDiskHeader, Error> {
         // Example: "   0 ."test/demo  1/85 " 8a 2a"
         let re =
             regex::Regex::new(r#"^\s*(\d+)\s+\."([^"]*)" ([a-zA-Z0-9]{2})"#).map_err(|_| {
-                Rs1541Error::Parse {
+                Error::Parse {
                     message: "Invalid header regex".to_string(),
                 }
             })?;
 
-        let caps = re.captures(line).ok_or_else(|| Rs1541Error::Parse {
+        let caps = re.captures(line).ok_or_else(|| Error::Parse {
             message: format!("Invalid header format: {}", line),
         })?;
 
         Ok(CbmDiskHeader {
-            drive_number: caps[1].parse().map_err(|_| Rs1541Error::Parse {
+            drive_number: caps[1].parse().map_err(|_| Error::Parse {
                 message: format!("Invalid drive number: {}", &caps[1]),
             })?,
             name: caps[2].trim_end().to_string(), // Keep leading spaces, trim trailing
@@ -426,16 +426,16 @@ impl CbmDirListing {
         }
     }
 
-    fn parse_blocks_free(line: &str) -> Result<u16, Rs1541Error> {
-        let re = regex::Regex::new(r"^\s*(\d+)\s+blocks free").map_err(|_| Rs1541Error::Parse {
+    fn parse_blocks_free(line: &str) -> Result<u16, Error> {
+        let re = regex::Regex::new(r"^\s*(\d+)\s+blocks free").map_err(|_| Error::Parse {
             message: "Invalid blocks free regex".to_string(),
         })?;
 
-        let caps = re.captures(line).ok_or_else(|| Rs1541Error::Parse {
+        let caps = re.captures(line).ok_or_else(|| Error::Parse {
             message: format!("Invalid blocks free format: {}", line),
         })?;
 
-        caps[1].parse().map_err(|_| Rs1541Error::Parse {
+        caps[1].parse().map_err(|_| Error::Parse {
             message: format!("Invalid blocks free number: {}", &caps[1]),
         })
     }

@@ -52,7 +52,7 @@
 //!
 //! # Error Handling
 //!
-//! The module uses a custom error type [`Rs1541Error`] that covers various failure modes:
+//! The module uses a custom error type [`Error`] that covers various failure modes:
 //!
 //! - Device errors (drive not responding, hardware issues)
 //! - File operation errors (file not found, disk full)
@@ -110,20 +110,18 @@ use crate::channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
 use crate::string::{AsciiString, PetsciiString};
 use crate::validate::{validate_device, DeviceValidation};
 use crate::{
-    BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDeviceType, CbmDirListing, CbmStatus, CbmString,
-    DeviceError, Rs1541Error, Rs1541ErrorNumber, Rs1541ErrorNumberOk, MAX_DEVICE_NUM,
+    BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDirListing, CbmStatus, CbmString,
+    DeviceError, Error, ErrorNumberOk, MAX_DEVICE_NUM,
 };
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use xum1541::constants::MIN_DEVICE_NUM;
-use xum1541::{Bus, BusBuilder, DeviceChannel, Xum1541Error};
+use xum1541::{Bus, BusBuilder, CommunicationKind, DeviceChannel, Xum1541Error};
 
 use std::collections::HashMap;
-use std::fmt;
 use std::ops::RangeInclusive;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// The main interface for interacting with Commodore disk drives via an XUM1541.
@@ -165,7 +163,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The driver cannot be opened
     /// - No XUM1541 device is connected
     /// - The device is in use by another process
@@ -175,7 +173,7 @@ impl Cbm {
     /// ```ignore
     /// let cbm = Cbm::new()?;
     /// ```
-    pub fn new() -> Result<Self, Rs1541Error> {
+    pub fn new() -> Result<Self, Error> {
         trace!("Cbm::new");
         let mut bus = BusBuilder::new().build()?;
         bus.initialize()?;
@@ -189,12 +187,12 @@ impl Cbm {
     /// which in turn will force a device reset
     ///
     /// This is a potentially risky operation that should be used with caution.
-    /// If it returns `Rs1541Error::DriverNotOpen`, the xum1541 driver may need to
+    /// If it returns `Error::DriverNotOpen`, the xum1541 driver may need to
     /// be reopened with a new `Cbm` instance.
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The driver is not open
     /// - The USB reset operation fails
     /// - The handle is invalid
@@ -205,7 +203,7 @@ impl Cbm {
     /// let mut cbm = Cbm::new()?;
     /// cbm.usb_device_reset()?;
     /// ```
-    pub fn usb_device_reset(&mut self) -> Result<(), Rs1541Error> {
+    pub fn usb_device_reset(&mut self) -> Result<(), Error> {
         // Lock the old handle - will be unlocked when it goes out of scope
         let mut handle = self.handle.lock();
 
@@ -230,7 +228,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The driver is not open
     /// - The bus reset operation fails
     ///
@@ -240,7 +238,7 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// cbm.reset_bus()?;
     /// ```
-    pub fn reset_bus(&self) -> Result<(), Rs1541Error> {
+    pub fn reset_bus(&self) -> Result<(), Error> {
         self.handle.lock().bus_mut_or_err()?.reset()?;
         Ok(())
     }
@@ -259,7 +257,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The device doesn't respond
     /// - The device returns invalid identification data
     /// - The driver is not open
@@ -271,7 +269,7 @@ impl Cbm {
     /// let info = cbm.identify(8)?;
     /// println!("Device type: {}", info.device_type);
     /// ```
-    pub fn identify(&self, device: u8) -> Result<CbmDeviceInfo, Rs1541Error> {
+    pub fn identify(&self, device: u8) -> Result<CbmDeviceInfo, Error> {
         // Issue a memory read of two bytes at address 0xff40
         // For compatibility with DOS1 drives we'll only read 1 byte at a time
         // (With DOS 2 we could pass in another byte to ask for 2 bytes)
@@ -326,7 +324,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The device doesn't respond
     /// - The status message cannot be read
     /// - The driver is not open
@@ -338,7 +336,7 @@ impl Cbm {
     /// let status = cbm.get_status(8)?;
     /// println!("Drive status: {}", status);
     /// ```
-    pub fn get_status(&self, device: u8) -> Result<CbmStatus, Rs1541Error> {
+    pub fn get_status(&self, device: u8) -> Result<CbmStatus, Error> {
         let mut guard = self.handle.lock();
         let mut bus = (&mut guard).bus_mut_or_err()?;
 
@@ -356,14 +354,30 @@ impl Cbm {
     ///
     /// # Returns
     /// - `HashMap<u8, CbmDevInfo>` - if successful
-    /// - `Rs1541Error`` - if a serious error occured.  If a Rs1541Error::Device error occurs, this is treated as non fatal and the query will continue
+    /// - `Error`` - if a serious error occured.  If a Error::Device error occurs, this is treated as non fatal and the query will continue
     ///
     /// # Examples
     /// ```ignore
     /// let devices = cbm.scan_bus()?;
     /// ```
-    pub fn scan_bus(&self) -> Result<HashMap<u8, CbmDeviceInfo>, Rs1541Error> {
+    pub fn scan_bus(&self) -> Result<HashMap<u8, CbmDeviceInfo>, Error> {
         self.scan_bus_range(MIN_DEVICE_NUM..=MAX_DEVICE_NUM)
+    }
+
+    /// Detects whether the specified device actually exists
+    pub fn drive_exists(&self, device: u8) -> Result<bool, Error> {
+        let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
+        match self.bus_listen(dc) {
+            Err(Error::Xum1541(Xum1541Error::Communication { kind: CommunicationKind::StatusValue { .. }})) => {
+                debug!("Device {device} doesn't exist");
+                Ok(false)
+            }
+            Err(e) => Err(e.into()),
+            Ok(_) => {
+                self.bus_unlisten()?;
+                Ok(true)
+            },
+        }
     }
 
     /// Scans the bus for devices within the range specified
@@ -372,7 +386,7 @@ impl Cbm {
     /// - `range` - The inclusive range to scan for
     ///
     /// - `HashMap<u8, CbmDevInfo>` - if successful
-    /// - `Rs1541Error`` - if a serious error occured.  If a Rs1541Error::Device error occurs, this is treated as non fatal and the query will continue
+    /// - `Error`` - if a serious error occured.  If a Error::Device error occurs, this is treated as non fatal and the query will continue
     ///
     /// # Examples
     /// ```ignore
@@ -384,38 +398,27 @@ impl Cbm {
     pub fn scan_bus_range(
         &self,
         range: RangeInclusive<u8>,
-    ) -> Result<HashMap<u8, CbmDeviceInfo>, Rs1541Error> {
+    ) -> Result<HashMap<u8, CbmDeviceInfo>, Error> {
         // Make return variable
         let mut devices = HashMap::new();
 
         // Check each device number
         for device in range {
-            // Get device status to see if it exists
-            match self.get_status(device) {
-                // If hit a device error continue, otherwise propagate
-                Err(Rs1541Error::Device { device: _, error }) => match error {
-                    DeviceError::NoDevice => {
-                        trace!("No device {device} found");
+            if self.drive_exists(device)? {
+                debug!("Device {device} exists - identify it");
+                let info = match self.identify(device) {
+                    // If hit a device error continue, otherwise propagate
+                    Err(Error::Device { .. }) => {
+                        warn!("Hit error identifying device {device} status");
                         continue;
                     }
-                    _ => warn!("Hit error querying device {device} status"),
-                },
-                Err(e) => return Err(e),
-                Ok(_) => (),
-            };
-
-            debug!("Device {device} exists - identify it");
-            let info = match self.identify(device) {
-                // If hit a device error continue, otherwise propagate
-                Err(Rs1541Error::Device { .. }) => {
-                    warn!("Hit error identifying device {device} status");
-                    continue;
-                }
-                Err(e) => return Err(e),
-                Ok(info) => info,
-            };
-
-            devices.insert(device, info);
+                    Err(e) => return Err(e),
+                    Ok(info) => info,
+                };
+                devices.insert(device, info);
+            } else {
+                trace!("Device {device} doesn't exist");
+            }
         }
 
         Ok(devices)
@@ -433,7 +436,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The device doesn't respond
     /// - The directory cannot be read
     /// - The directory format is invalid
@@ -456,7 +459,7 @@ impl Cbm {
     /// println!("Blocks free: {}", dir.blocks_free);
     /// ```
     /// Get directory listing, converting filenames from PETSCII to ASCII
-    pub fn dir(&self, device: u8, drive_num: Option<u8>) -> Result<CbmDirListing, Rs1541Error> {
+    pub fn dir(&self, device: u8, drive_num: Option<u8>) -> Result<CbmDirListing, Error> {
         // Validate drive_num
         if let Some(drive_num) = drive_num {
             if drive_num > 1 {
@@ -529,7 +532,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The device doesn't respond
     /// - The validation fails
     /// - The driver is not open
@@ -540,7 +543,7 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// cbm.validate_disk(8)?;
     /// ```
-    pub fn validate_disk(&self, device: u8) -> Result<(), Rs1541Error> {
+    pub fn validate_disk(&self, device: u8) -> Result<(), Error> {
         // Send validate command (V)
         self.send_command_petscii(device, &PetsciiString::from_ascii_str("v"))?;
 
@@ -557,7 +560,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The file doesn't exist
     /// - The file cannot be deleted
     /// - The driver is not open
@@ -568,7 +571,7 @@ impl Cbm {
     /// let cbm = Cbm::new()?;
     /// cbm.delete_file(8, "OLDFILE.PRG")?;
     /// ```
-    pub fn delete_file(&self, device: u8, filename: &AsciiString) -> Result<(), Rs1541Error> {
+    pub fn delete_file(&self, device: u8, filename: &AsciiString) -> Result<(), Error> {
         // Construct scratch command (S:filename)
         let cmd = format!("s0:{}", filename);
         self.send_string_command_ascii(device, &cmd)?;
@@ -587,7 +590,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The device doesn't respond
     /// - The format operation fails
     /// - The ID is not exactly 2 characters
@@ -605,11 +608,11 @@ impl Cbm {
         device: u8,
         name: &AsciiString,
         id: &AsciiString,
-    ) -> Result<(), Rs1541Error> {
+    ) -> Result<(), Error> {
         // Validate ID length
         let id_len = id.as_bytes().len();
         if id_len != 2 {
-            return Err(Rs1541Error::Validation {
+            return Err(Error::Validation {
                 message: format!(
                     "Device {device} format error: Disk ID must be 2 characters, not {id_len}"
                 ),
@@ -640,7 +643,7 @@ impl Cbm {
     ///
     /// # Returns
     /// - `()` - is successful
-    /// - `Rs1541Error` - if an error occurs
+    /// - `Error` - if an error occurs
     ///
     /// Returns an error if couldn't read all request bytes.
     ///
@@ -659,7 +662,7 @@ impl Cbm {
         device: u8,
         addr: u16,
         buf: &mut [u8],
-    ) -> Result<(), Rs1541Error> {
+    ) -> Result<(), Error> {
         let size = buf.len();
         trace!("Cbm::read_drive_memory: device {device} addr 0x{addr:04x} size {size}");
 
@@ -713,7 +716,7 @@ impl Cbm {
             trace!("Read status in order to clear effects of M-R command");
             match Self::get_status_locked(bus, device) {
                 Ok(status) => debug!("Unexpectedly got status OK after M-R command {status} "),
-                Err(Rs1541Error::Parse { message }) => {
+                Err(Error::Parse { message }) => {
                     trace!("Got expectedly bad status when reading status after M-R: {message}")
                 }
                 Err(e) => {
@@ -722,7 +725,7 @@ impl Cbm {
                         format!("Failed to get status after identify: {e}"),
                     );
                     return Err(match e {
-                        Rs1541Error::Device { device, error } => match error {
+                        Error::Device { device, error } => match error {
                             DeviceError::NoDevice => DeviceError::no_device(device),
                             _ => default_error,
                         },
@@ -742,7 +745,7 @@ impl Cbm {
         device: u8,
         addr: u16,
         data: &[u8],
-    ) -> Result<(), Rs1541Error> {
+    ) -> Result<(), Error> {
         // Split address into low and high bytes
         let addr_low = (addr & 0xFF) as u8;
         let addr_high = ((addr >> 8) & 0xFF) as u8;
@@ -785,13 +788,13 @@ impl Cbm {
     /// let cmd_str = String("n0:formatted,aa");
     /// cbm.send_command(device, &CbmString::from_ascii_bytes(cmd_str.as_bytes()));
     /// ```
-    pub fn send_command(&self, device: u8, cmd: &CbmString) -> Result<(), Rs1541Error> {
+    pub fn send_command(&self, device: u8, cmd: &CbmString) -> Result<(), Error> {
         self.send_command_petscii(device, &cmd.to_petscii())
     }
 
     /// Send a command on a specific drive
     /// The command must be provided as a PetsciiString
-    pub fn send_command_petscii(&self, device: u8, cmd: &PetsciiString) -> Result<(), Rs1541Error> {
+    pub fn send_command_petscii(&self, device: u8, cmd: &PetsciiString) -> Result<(), Error> {
         trace!("Cbm::send_command_petscii device {device} cmd {cmd}");
         let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
 
@@ -802,7 +805,7 @@ impl Cbm {
     }
 
     /// Sends a command string to a device after converting from ASCII to PETSCII
-    pub fn send_command_ascii(&self, device: u8, command: &AsciiString) -> Result<(), Rs1541Error> {
+    pub fn send_command_ascii(&self, device: u8, command: &AsciiString) -> Result<(), Error> {
         let petscii: PetsciiString = command.into();
         trace!("Send string command in petscii {}", petscii);
         self.send_command_petscii(device, &petscii)
@@ -812,11 +815,11 @@ impl Cbm {
     /// The input string must be ASCII-compatible.
     ///
     /// # Errors
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The string contains non-ASCII characters
     /// - The device command fails
-    pub fn send_string_command_ascii(&self, device: u8, command: &str) -> Result<(), Rs1541Error> {
-        let ascii = AsciiString::try_from(command).map_err(|e| Rs1541Error::Validation {
+    pub fn send_string_command_ascii(&self, device: u8, command: &str) -> Result<(), Error> {
+        let ascii = AsciiString::try_from(command).map_err(|e| Error::Validation {
             message: format!("Unable to parse requested command as ASCII {command}: {e}"),
         })?;
         trace!("Send string command in ascii {}", ascii);
@@ -827,22 +830,22 @@ impl Cbm {
     /// The input string bytes must be valid PETSCII.
     ///
     /// # Errors
-    /// Returns `Rs1541Error` if the device command fails
+    /// Returns `Error` if the device command fails
     pub fn send_string_command_petscii(
         &self,
         device: u8,
         command: &str,
-    ) -> Result<(), Rs1541Error> {
+    ) -> Result<(), Error> {
         self.send_command_petscii(
             device,
             &PetsciiString::from_petscii_bytes(command.as_bytes()),
         )
     }
 
-    fn validate_read_args(size: usize, message: String) -> Result<(), Rs1541Error> {
+    fn validate_read_args(size: usize, message: String) -> Result<(), Error> {
         if size == 0 {
             warn!("Asked to read {size} bytes: {message}");
-            Err(Rs1541Error::Validation { message })
+            Err(Error::Validation { message })
         } else {
             Ok(())
         }
@@ -859,7 +862,7 @@ impl Cbm {
         dc: DeviceChannel,
         buf: &mut [u8],
         read_all: bool,
-    ) -> Result<usize, Rs1541Error> {
+    ) -> Result<usize, Error> {
         let mut guard = self.handle.lock();
         let bus = (&mut guard).bus_mut_or_err()?;
 
@@ -877,7 +880,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The file doesn't exist
     /// - The file cannot be opened
     /// - A read error occurs
@@ -890,7 +893,7 @@ impl Cbm {
     /// let data = cbm.read_file(8, "MYPROGRAM.PRG")?;
     /// ```
     /// Read a file with ASCII filename
-    pub fn read_file(&self, device: u8, filename: &AsciiString) -> Result<Vec<u8>, Rs1541Error> {
+    pub fn read_file(&self, device: u8, filename: &AsciiString) -> Result<Vec<u8>, Error> {
         let dc = {
             let _bus = self.handle.lock().bus_ref_or_err()?;
 
@@ -902,7 +905,7 @@ impl Cbm {
 
         // Check status after open
         let status = self.get_status(device)?;
-        if status.is_ok() != Rs1541ErrorNumberOk::Ok {
+        if status.is_ok() != ErrorNumberOk::Ok {
             return Err(status.into());
         }
 
@@ -911,7 +914,7 @@ impl Cbm {
         let bus = (&mut guard).bus_mut_or_err()?;
 
         // Now read the file data
-        bus.talk(dc).map_err(|e| Rs1541Error::File {
+        bus.talk(dc).map_err(|e| Error::File {
             device,
             message: format!("Talk failed: {}", e),
         })?;
@@ -919,7 +922,7 @@ impl Cbm {
         let mut data = Vec::new();
         loop {
             let buf = &mut [0u8; 256];
-            let count = Self::bus_read_locked(bus, dc, buf).map_err(|e| Rs1541Error::File {
+            let count = Self::bus_read_locked(bus, dc, buf).map_err(|e| Error::File {
                 device,
                 message: format!("Read failed: {}", e),
             })?;
@@ -932,7 +935,7 @@ impl Cbm {
         }
 
         // Cleanup
-        bus.untalk().map_err(|e| Rs1541Error::File {
+        bus.untalk().map_err(|e| Error::File {
             device,
             message: format!("Untalk failed: {}", e),
         })?;
@@ -952,7 +955,7 @@ impl Cbm {
     ///
     /// # Errors
     ///
-    /// Returns `Rs1541Error` if:
+    /// Returns `Error` if:
     /// - The disk is full
     /// - The file cannot be created
     /// - A write error occurs
@@ -970,7 +973,7 @@ impl Cbm {
         device: u8,
         filename: &AsciiString,
         data: &[u8],
-    ) -> Result<(), Rs1541Error> {
+    ) -> Result<(), Error> {
         let dc = {
             let _bus = self.handle.lock().bus_ref_or_err()?;
 
@@ -983,7 +986,7 @@ impl Cbm {
 
         // Check status after open
         let status = self.get_status(device)?;
-        if status.is_ok() != Rs1541ErrorNumberOk::Ok {
+        if status.is_ok() != ErrorNumberOk::Ok {
             return Err(status.into());
         }
 
@@ -992,20 +995,20 @@ impl Cbm {
         let bus = (&mut guard).bus_mut_or_err()?;
 
         // Now write the file data
-        bus.listen(dc).map_err(|e| Rs1541Error::File {
+        bus.listen(dc).map_err(|e| Error::File {
             device,
             message: format!("Listen failed: {}", e),
         })?;
 
         // Write data in chunks
         for chunk in data.chunks(256) {
-            let result = bus.write(chunk).map_err(|e| Rs1541Error::File {
+            let result = bus.write(chunk).map_err(|e| Error::File {
                 device,
                 message: format!("Write failed: {}", e),
             })?;
 
             if result != chunk.len() {
-                return Err(Rs1541Error::File {
+                return Err(Error::File {
                     device,
                     message: "Failed to write complete chunk".into(),
                 });
@@ -1013,7 +1016,7 @@ impl Cbm {
         }
 
         // Cleanup
-        bus.unlisten().map_err(|e| Rs1541Error::File {
+        bus.unlisten().map_err(|e| Error::File {
             device,
             message: format!("Unlisten failed: {}", e),
         })?;
@@ -1033,11 +1036,11 @@ impl Cbm {
     ///
     /// # Returns
     /// `()` - if successful
-    /// `Rs1541Error` - if an error occurs
+    /// `Error` - if an error occurs
     ///
     /// Note this function must be folllowed by the close for this device
     /// and channel
-    pub fn open_file(&self, dc: DeviceChannel, filename: &AsciiString) -> Result<(), Rs1541Error> {
+    pub fn open_file(&self, dc: DeviceChannel, filename: &AsciiString) -> Result<(), Error> {
         let petscii_name: PetsciiString = filename.into();
 
         {
@@ -1057,11 +1060,11 @@ impl Cbm {
     ///
     /// # Returns
     /// `()` - if successful
-    /// `Rs1541Error` - if an error occurs
+    /// `Error` - if an error occurs
     ///
     /// Note that this function must have been preceeded by an open_file()
     /// call for this device and channel
-    pub fn close_file(&self, dc: DeviceChannel) -> Result<(), Rs1541Error> {
+    pub fn close_file(&self, dc: DeviceChannel) -> Result<(), Error> {
         let mut guard = self.handle.lock();
         let bus = (&mut guard).bus_mut_or_err()?;
 
@@ -1081,7 +1084,7 @@ impl Cbm {
         &self,
         device: u8,
         filename: &PetsciiString,
-    ) -> Result<Vec<u8>, Rs1541Error> {
+    ) -> Result<Vec<u8>, Error> {
         // Validate device
         validate_device(Some(device), DeviceValidation::Required)?;
 
@@ -1104,7 +1107,7 @@ impl Cbm {
         &self,
         device: u8,
         filename: &AsciiString,
-    ) -> Result<Vec<u8>, Rs1541Error> {
+    ) -> Result<Vec<u8>, Error> {
         trace!("Cbm::load_file device: {device} filename: {filename}");
 
         // Convert filename to petscii
@@ -1118,7 +1121,7 @@ impl Cbm {
         bus: &mut Bus,
         device: u8,
         filename: &PetsciiString,
-    ) -> Result<Vec<u8>, Rs1541Error> {
+    ) -> Result<Vec<u8>, Error> {
         // Open the file
         let dc = DeviceChannel::new(device, CBM_CHANNEL_LOAD)?;
         Self::open_file_petscii_locked(bus, dc, filename)?;
@@ -1156,10 +1159,42 @@ impl Cbm {
 
         Ok(read_result)
     }
+
 }
 
 /// Internal functions
 impl Cbm {
+    fn bus_listen(&self, dc: DeviceChannel) -> Result<(), Error> {
+        let mut guard = self.handle.lock();
+        let bus = (&mut guard).bus_mut_or_err()?;
+
+        bus.listen(dc).map_err(|e| e.into())
+    }
+
+    #[allow(dead_code)]
+    fn bus_unlisten(&self) -> Result<(), Error> {
+        let mut guard = self.handle.lock();
+        let bus = (&mut guard).bus_mut_or_err()?;
+
+        bus.unlisten().map_err(|e| e.into())
+    }
+
+    #[allow(dead_code)]
+    fn bus_talk(&self, dc: DeviceChannel) -> Result<(), Error> {
+        let mut guard = self.handle.lock();
+        let bus = (&mut guard).bus_mut_or_err()?;
+
+        bus.talk(dc).map_err(|e| e.into())
+    }
+
+    #[allow(dead_code)]
+    fn bus_untalk(&self) -> Result<(), Error> {
+        let mut guard = self.handle.lock();
+        let bus = (&mut guard).bus_mut_or_err()?;
+
+        bus.untalk().map_err(|e| e.into())
+    }
+
     // Handles figuring out if the read response means that we actually
     // have no device.
     //
@@ -1172,7 +1207,7 @@ impl Cbm {
         result: Result<usize, Xum1541Error>,
         bus: &Bus,
         dc: DeviceChannel,
-    ) -> Result<usize, Rs1541Error> {
+    ) -> Result<usize, Error> {
         match result {
             Ok(0) => {
                 if let Some(talking_dc) = bus.is_talking() {
@@ -1195,7 +1230,7 @@ impl Cbm {
         bus: &mut Bus,
         dc: DeviceChannel,
         buf: &mut [u8],
-    ) -> Result<usize, Rs1541Error> {
+    ) -> Result<usize, Error> {
         Self::handle_read_result(bus.read(buf), bus, dc)
     }
 
@@ -1204,7 +1239,7 @@ impl Cbm {
         dc: DeviceChannel,
         buf: &mut Vec<u8>,
         pattern: &[u8],
-    ) -> Result<usize, Rs1541Error> {
+    ) -> Result<usize, Error> {
         Self::handle_read_result(bus.read_until(buf, pattern), bus, dc)
     }
 
@@ -1214,17 +1249,17 @@ impl Cbm {
         dc: DeviceChannel,
         buf: &mut Vec<u8>,
         pattern: &[u8],
-    ) -> Result<usize, Rs1541Error> {
+    ) -> Result<usize, Error> {
         Self::handle_read_result(bus.read_until_any(buf, pattern), bus, dc)
     }
 
-    fn check_for_status_ok(bus: &mut Bus, device: u8, accept_73: bool) -> Result<(), Rs1541Error> {
+    fn check_for_status_ok(bus: &mut Bus, device: u8, accept_73: bool) -> Result<(), Error> {
         Self::get_status_locked(bus, device)
             .map_err(|e| {
                 let default_error =
                     DeviceError::get_status_failure(device, format!("Failed to get status: {e}"));
                 match e {
-                    Rs1541Error::Device { device, error } => match error {
+                    Error::Device { device, error } => match error {
                         DeviceError::NoDevice => DeviceError::no_device(device),
                         _ => default_error,
                     },
@@ -1245,7 +1280,7 @@ impl Cbm {
         bus: &mut Bus,
         dc: DeviceChannel,
         cmd: &PetsciiString,
-    ) -> Result<(), Rs1541Error> {
+    ) -> Result<(), Error> {
         bus.listen(dc)?;
         bus.write(cmd.as_bytes()).inspect_err(|_| {
             let _ = bus.unlisten();
@@ -1253,7 +1288,7 @@ impl Cbm {
         bus.unlisten().map_err(|e| e.into())
     }
 
-    fn get_status_locked(bus: &mut Bus, device: u8) -> Result<CbmStatus, Rs1541Error> {
+    fn get_status_locked(bus: &mut Bus, device: u8) -> Result<CbmStatus, Error> {
         trace!("Cbm::get_status_locked device: {device}");
 
         // Set up DeviceChannel to read the status
@@ -1286,7 +1321,7 @@ impl Cbm {
         dc: DeviceChannel,
         buf: &mut [u8],
         read_all: bool,
-    ) -> Result<usize, Rs1541Error> {
+    ) -> Result<usize, Error> {
         let size = buf.len();
         trace!("Cbm::read_from_drive_locked {dc} buf.len(): {size} read_all: {read_all}");
 
@@ -1338,7 +1373,7 @@ impl Cbm {
         bus: &mut Bus,
         dc: DeviceChannel,
         filename: &PetsciiString,
-    ) -> Result<(), Rs1541Error> {
+    ) -> Result<(), Error> {
         // The sequence for open is:
         // Bus::open
         // Bus::write the filename (no file type required)
@@ -1361,344 +1396,7 @@ impl Cbm {
         })
     }
 
-    fn close_file_locked(bus: &mut Bus, dc: DeviceChannel) -> Result<(), Rs1541Error> {
+    fn close_file_locked(bus: &mut Bus, dc: DeviceChannel) -> Result<(), Error> {
         bus.close(dc).map_err(|e| e.into())
-    }
-}
-
-/// Represents a channel to a CBM drive
-///
-/// Channels are the primary means of communication with CBM drives. Each drive
-/// supports 16 channels (0-15), with channel 15 reserved for control operations.
-#[derive(Debug, Clone)]
-pub struct CbmChannel {
-    _number: u8,
-    _purpose: CbmChannelPurpose,
-}
-
-/// Purpose for which a channel is being used
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CbmChannelPurpose {
-    Reset,     // Channel 15 - reserved for reset commands
-    Directory, // Reading directory
-    FileRead,  // Reading a file
-    FileWrite, // Writing a file
-    Command,   // Other command channel operations
-}
-
-/// Manages channel allocation for a drive unit
-///
-/// Ensures proper allocation and deallocation of channels, maintaining
-/// the invariant that channel 15 is only used for reset operations.
-#[derive(Debug)]
-pub struct CbmChannelManager {
-    channels: HashMap<u8, Option<CbmChannel>>,
-    next_sequence: AtomicU64,
-}
-
-impl CbmChannelManager {
-    pub fn new() -> Self {
-        let mut channels = HashMap::new();
-        for i in 0..=15 {
-            channels.insert(i, None);
-        }
-        Self {
-            channels,
-            next_sequence: AtomicU64::new(1), // Start at 1 to avoid handle 0
-        }
-    }
-
-    /// Allocates a channel for a specific purpose
-    ///
-    /// Returns (channel_number, handle) if successful, None if no channels available
-    /// or if attempting to allocate channel 15 for non-reset purposes
-    pub fn allocate(
-        &mut self,
-        _device_number: u8,
-        _drive_id: u8,
-        purpose: CbmChannelPurpose,
-    ) -> Option<u8> {
-        // Channel 15 handling
-        if purpose == CbmChannelPurpose::Reset {
-            if let Some(slot) = self.channels.get_mut(&15) {
-                if slot.is_none() {
-                    let _sequence = self.next_sequence.fetch_add(1, Ordering::SeqCst);
-                    *slot = Some(CbmChannel {
-                        _number: 15,
-                        _purpose: purpose,
-                    });
-                    return Some(15);
-                }
-            }
-            return None;
-        }
-
-        // Regular channel allocation
-        for i in 0..15 {
-            if let Some(slot) = self.channels.get_mut(&i) {
-                if slot.is_none() {
-                    let _sequence = self.next_sequence.fetch_add(1, Ordering::SeqCst);
-                    *slot = Some(CbmChannel {
-                        _number: i,
-                        _purpose: purpose,
-                    });
-                    return Some(i);
-                }
-            }
-        }
-        None
-    }
-
-    pub fn reset(&mut self) {
-        for i in 0..=15 {
-            self.channels.insert(i, None);
-        }
-    }
-}
-
-/// Represents a physical drive unit
-///
-/// Manages the channels and state for a single physical drive unit,
-/// which may contain one or two drives.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct CbmDriveUnit {
-    pub device_number: u8,
-    pub device_type: CbmDeviceType,
-    channel_manager: Arc<Mutex<CbmChannelManager>>,
-    busy: bool,
-}
-
-impl fmt::Display for CbmDriveUnit {
-    /// Provides a string representation of the drive unit.
-    ///
-    /// Returns a string containing the device number and type.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
-    /// println!("{}", drive); // Outputs: "Drive 8 (1541)"
-    /// ```
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Drive {} ({})", self.device_number, self.device_type)
-    }
-}
-
-/// Represents a physical Commodore disk drive unit connected to the system.
-///
-/// A `CbmDriveUnit` manages the state and operations for a single physical drive unit.
-/// This can be a single-drive unit (like the 1541) or a dual-drive unit (4040, etc).
-/// The struct handles channel allocation, device status tracking, and drive-specific
-/// operations.
-///
-/// The drive unit maintains its own channel manager to ensure proper allocation and
-/// deallocation of communication channels. Channel 15 is reserved for commands and
-/// status operations.
-///
-/// # Examples
-///
-/// ```ignore
-/// use your_crate_name::{CbmDriveUnit, CbmDeviceType};
-///
-/// // Create a new 1541 drive unit
-/// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
-///
-/// // Initialize both drives if this is a dual unit
-/// let cbm = Cbm::new()?;
-/// let status = drive.send_init(cbm, &vec![])?;
-/// ```
-///
-impl CbmDriveUnit {
-    /// Creates a new drive unit instance.
-    ///
-    /// This function creates a new drive unit with the specified device number
-    /// and type. It initializes the channel manager but does not perform any
-    /// hardware communication.
-    ///
-    /// # Arguments
-    ///
-    /// * `device_number` - The IEC device number
-    /// * `device_type` - The type of drive (e.g., Cbm1541, Cbm1571)
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
-    /// ```
-    pub fn new(device_number: u8, device_type: CbmDeviceType) -> Self {
-        // Test whether this device is actually attached
-        Self {
-            device_number,
-            device_type,
-            channel_manager: Arc::new(Mutex::new(CbmChannelManager::new())),
-            busy: false,
-        }
-    }
-
-    /// Gets the current status of the drive unit.
-    ///
-    /// Retrieves the status message from the drive, which may include error conditions,
-    /// drive state, or the result of the last operation.
-    ///
-    /// # Arguments
-    ///
-    /// * `cbm` - The Cbm instance to use for communication
-    ///
-    /// # Errors
-    ///
-    /// Returns `Rs1541Error` if:
-    /// - The drive doesn't respond
-    /// - The status cannot be read
-    /// - The driver is not open
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
-    /// let cbm = Cbm::new()?;
-    /// let status = drive.get_status(&cbm)?;
-    /// println!("Drive status: {}", status);
-    /// ```
-    pub fn get_status(&mut self, cbm: &Cbm) -> Result<CbmStatus, Rs1541Error> {
-        self.busy = true;
-        cbm.get_status(self.device_number)
-            .inspect(|_| self.busy = false)
-            .inspect_err(|_| self.busy = false)
-    }
-
-    /// Sends initialization commands to all drives in the unit.
-    ///
-    /// For dual drive units, this will initialize both drive 0 and drive 1.
-    /// The function returns a vector of status messages, one for each drive
-    /// that was initialized.
-    ///
-    /// # Arguments
-    ///
-    /// * `cbm` - The Cbm instance to use for communication
-    /// * `ignore_errors` - Vector of error numbers that should not cause the operation to fail
-    ///
-    /// # Returns
-    /// `Vec<Result<CbmStatus, Rs1541Error>>` - A vector of status messages, or errors, one for each drive
-    ///
-    /// `Rs1541Error` is used if:
-    /// - Any drive fails to initialize (unless its error is in ignore_errors)
-    /// - The command cannot be sent
-    /// - The driver is not open
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use rs1541::{Cbm, CbmDriveUnit, CbmDeviceType, Rs1541ErrorNumber};
-    /// let mut cbm = Cbm::new().unwrap();
-    /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
-    ///
-    /// // Initialize both drives, ignoring "drive not ready" errors
-    /// let status_vec = drive.send_init(&mut cbm, &vec![Rs1541ErrorNumber::DriveNotReady]);
-    /// // Now process the status_vec
-    /// ```
-    pub fn send_init(
-        &mut self,
-        cbm: &mut Cbm,
-        ignore_errors: &Vec<Rs1541ErrorNumber>,
-    ) -> Vec<Result<CbmStatus, Rs1541Error>> {
-        self.busy = true;
-        let mut results = Vec::new();
-
-        for ii in self.num_disk_drives_iter() {
-            let cmd = format!("i{}", ii);
-            let status = match cbm.send_string_command_ascii(self.device_number, &cmd) {
-                Ok(_) => match cbm.get_status(self.device_number) {
-                    Ok(status) => {
-                        if status.is_ok() != Rs1541ErrorNumberOk::Ok
-                            && !ignore_errors.contains(&status.error_number)
-                        {
-                            Err(status.into())
-                        } else {
-                            Ok(status)
-                        }
-                    }
-                    Err(e) => Err(e),
-                },
-                Err(e) => Err(e),
-            };
-            results.push(status);
-        }
-
-        self.busy = false;
-        results
-    }
-
-    #[allow(dead_code)]
-    fn reset(&mut self) -> Result<(), Rs1541Error> {
-        self.busy = true;
-        self.channel_manager.lock().reset();
-        self.busy = true;
-        Ok(())
-    }
-
-    /// Gets the number of disk drives in this unit.
-    ///
-    /// Returns 1 for single drive units (like the 1541) and 2 for
-    /// dual drive units (like the 4040).
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
-    /// assert_eq!(drive.num_disk_drives(), 2);
-    /// ```
-    pub fn num_disk_drives(&self) -> u8 {
-        self.device_type.num_disk_drives()
-    }
-
-    /// Returns an iterator over the drive numbers in this unit.
-    ///
-    /// For a single drive unit, yields only 0.
-    /// For a dual drive unit, yields 0 and 1.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
-    /// for drive_num in drive.num_disk_drives_iter() {
-    ///     println!("Initializing drive {}", drive_num);
-    ///     // ... initialize drive ...
-    /// }
-    /// ```
-    pub fn num_disk_drives_iter(&self) -> impl Iterator<Item = u8> {
-        0..self.num_disk_drives()
-    }
-
-    /// Returns an iterator over the drive numbers in this unit.
-    ///
-    /// For a single drive unit, yields only 0.
-    /// For a dual drive unit, yields 0 and 1.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1571);
-    /// for drive_num in drive.num_disk_drives_iter() {
-    ///     println!("Initializing drive {}", drive_num);
-    ///     // ... initialize drive ...
-    /// }
-    /// ```
-    pub fn is_responding(&self) -> bool {
-        true
-    }
-
-    /// Checks if the drive unit is currently busy with an operation.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
-    /// if !drive.is_busy() {
-    ///     // Safe to send new commands
-    /// }
-    /// ```
-    pub fn is_busy(&self) -> bool {
-        self.busy
     }
 }

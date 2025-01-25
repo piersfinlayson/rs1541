@@ -4,9 +4,9 @@
 //!
 //! Formats a disk and then returns the directory listing
 
-use rs1541::{AsciiString, Cbm, Rs1541Error};
+use rs1541::{AsciiString, Cbm, Error};
 
-fn main() -> Result<(), Rs1541Error> {
+fn main() -> Result<(), Error> {
     // Driver automatically opens on creation and closes on drop
     let cbm = Cbm::new()?;
 

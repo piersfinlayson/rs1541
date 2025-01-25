@@ -1,4 +1,4 @@
-use crate::Rs1541Error;
+use crate::Error;
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CbmStatus {
     pub number: u8,
-    pub error_number: Rs1541ErrorNumber,
+    pub error_number: ErrorNumber,
     pub message: String,
     pub track: u8,
     pub sector: u8,
@@ -19,7 +19,7 @@ impl Default for CbmStatus {
     fn default() -> Self {
         CbmStatus {
             number: 255,
-            error_number: Rs1541ErrorNumber::default(),
+            error_number: ErrorNumber::default(),
             message: "none".to_string(),
             track: 0,
             sector: 0,
@@ -29,7 +29,7 @@ impl Default for CbmStatus {
 }
 
 impl CbmStatus {
-    pub fn new(status: &str, device: u8) -> Result<Self, Rs1541Error> {
+    pub fn new(status: &str, device: u8) -> Result<Self, Error> {
         trace!("Received device status from device {}: {}", device, status);
         trace!("Status bytes: {:?}", status.as_bytes());
 
@@ -46,14 +46,14 @@ impl CbmStatus {
         );
 
         if clean_status.len() == 0 {
-            return Err(Rs1541Error::Parse {
+            return Err(Error::Parse {
                 message: format!("Device {device} provided zero length status string"),
             });
         }
 
         let parts: Vec<&str> = clean_status.split(',').collect();
         if parts.len() != 4 {
-            return Err(Rs1541Error::Parse {
+            return Err(Error::Parse {
                 message: format!("Device {device} supplied status format: {clean_status}"),
             });
         }
@@ -61,14 +61,14 @@ impl CbmStatus {
         let number = parts[0]
             .trim()
             .parse::<u8>()
-            .map_err(|_| Rs1541Error::Parse {
+            .map_err(|_| Error::Parse {
                 message: format!(
                     "Device {device}: Invalid error number: {} within status: {}",
                     parts[0], clean_status
                 ),
             })?;
         let error_number = number.into();
-        if error_number == Rs1541ErrorNumber::Unknown {
+        if error_number == ErrorNumber::Unknown {
             warn!("Unknown Error Number (EN) returned by drive: {}", number);
         }
 
@@ -77,7 +77,7 @@ impl CbmStatus {
         let track = parts[2]
             .trim()
             .parse::<u8>()
-            .map_err(|_| Rs1541Error::Parse {
+            .map_err(|_| Error::Parse {
                 message: format!(
                     "Device {device}: Invalid track: {} within status: {}",
                     parts[2], clean_status
@@ -89,7 +89,7 @@ impl CbmStatus {
             .trim_end_matches('\n')
             .trim()
             .parse::<u8>()
-            .map_err(|_| Rs1541Error::Parse {
+            .map_err(|_| Error::Parse {
                 message: format!(
                     "Device {device}: Invalid sector: {} within status: {}",
                     parts[3], clean_status
@@ -106,20 +106,20 @@ impl CbmStatus {
         })
     }
 
-    pub fn is_ok(&self) -> Rs1541ErrorNumberOk {
+    pub fn is_ok(&self) -> ErrorNumberOk {
         if self.number < 20 {
-            Rs1541ErrorNumberOk::Ok
+            ErrorNumberOk::Ok
         } else if self.number == 73 {
-            Rs1541ErrorNumberOk::Number73
+            ErrorNumberOk::Number73
         } else {
-            Rs1541ErrorNumberOk::Err
+            ErrorNumberOk::Err
         }
     }
 
     /// Useful for checking drive gave us any valid response
     /// This means it's working even if the disk isn't inserted, is corrupt, etc
     pub fn is_valid_cbm(&self) -> bool {
-        self.error_number != Rs1541ErrorNumber::Unknown
+        self.error_number != ErrorNumber::Unknown
     }
 
     pub fn track(&self) -> Option<u8> {
@@ -139,7 +139,7 @@ impl CbmStatus {
     }
 
     pub fn files_scratched(&self) -> Option<u8> {
-        if self.error_number == Rs1541ErrorNumber::FilesScratched {
+        if self.error_number == ErrorNumber::FilesScratched {
             Some(self.track)
         } else {
             None
@@ -159,7 +159,7 @@ impl CbmStatus {
 }
 
 impl TryFrom<(&str, u8)> for CbmStatus {
-    type Error = Rs1541Error;
+    type Error = Error;
 
     fn try_from((s, device): (&str, u8)) -> Result<Self, Self::Error> {
         Self::new(s, device)
@@ -176,19 +176,19 @@ impl fmt::Display for CbmStatus {
     }
 }
 
-impl Into<Result<(), Rs1541Error>> for CbmStatus {
-    fn into(self) -> Result<(), Rs1541Error> {
+impl Into<Result<(), Error>> for CbmStatus {
+    fn into(self) -> Result<(), Error> {
         match self.is_ok() {
-            Rs1541ErrorNumberOk::Ok => Ok(()),
-            Rs1541ErrorNumberOk::Number73 => Err(self.into()),
-            Rs1541ErrorNumberOk::Err => Err(self.into()),
+            ErrorNumberOk::Ok => Ok(()),
+            ErrorNumberOk::Number73 => Err(self.into()),
+            ErrorNumberOk::Err => Err(self.into()),
         }
     }
 }
 
 impl CbmStatus {
-    pub fn into_73_ok(self) -> Result<(), Rs1541Error> {
-        if self.is_ok() == Rs1541ErrorNumberOk::Number73 {
+    pub fn into_73_ok(self) -> Result<(), Error> {
+        if self.is_ok() == ErrorNumberOk::Number73 {
             Ok(())
         } else {
             Err(self.into())
@@ -399,7 +399,7 @@ impl CbmDeviceType {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Rs1541ErrorNumber {
+pub enum ErrorNumber {
     Ok = 0,
     FilesScratched = 1,
     ReadErrorBlockHeaderNotFound = 20,
@@ -437,13 +437,13 @@ pub enum Rs1541ErrorNumber {
     Unknown = 255,
 }
 
-impl Default for Rs1541ErrorNumber {
+impl Default for ErrorNumber {
     fn default() -> Self {
-        Rs1541ErrorNumber::Unknown
+        ErrorNumber::Unknown
     }
 }
 
-impl From<u8> for Rs1541ErrorNumber {
+impl From<u8> for ErrorNumber {
     fn from(value: u8) -> Self {
         match value {
             0 => Self::Ok,
@@ -485,61 +485,61 @@ impl From<u8> for Rs1541ErrorNumber {
     }
 }
 
-impl fmt::Display for Rs1541ErrorNumber {
+impl fmt::Display for ErrorNumber {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            Rs1541ErrorNumber::Ok => "OK",
-            Rs1541ErrorNumber::FilesScratched => "FILES SCRATCHED",
-            Rs1541ErrorNumber::ReadErrorBlockHeaderNotFound => {
+            ErrorNumber::Ok => "OK",
+            ErrorNumber::FilesScratched => "FILES SCRATCHED",
+            ErrorNumber::ReadErrorBlockHeaderNotFound => {
                 "READ ERROR (block header not found)"
             }
-            Rs1541ErrorNumber::ReadErrorNoSyncCharacter => "READ ERROR (no sync character)",
-            Rs1541ErrorNumber::ReadErrorDataBlockNotPresent => {
+            ErrorNumber::ReadErrorNoSyncCharacter => "READ ERROR (no sync character)",
+            ErrorNumber::ReadErrorDataBlockNotPresent => {
                 "READ ERROR (data block not present)"
             }
-            Rs1541ErrorNumber::ReadErrorChecksumErrorInDataBlock => {
+            ErrorNumber::ReadErrorChecksumErrorInDataBlock => {
                 "READ ERROR (checksum error in data block)"
             }
-            Rs1541ErrorNumber::ReadErrorByteDecodingError => "READ ERROR (byte decoding error)",
-            Rs1541ErrorNumber::WriteErrorWriteVerifyError => "WRITE ERROR (write verify error)",
-            Rs1541ErrorNumber::WriteProtectOn => "WRITE PROTECT ON",
-            Rs1541ErrorNumber::ReadErrorChecksumErrorInHeader => {
+            ErrorNumber::ReadErrorByteDecodingError => "READ ERROR (byte decoding error)",
+            ErrorNumber::WriteErrorWriteVerifyError => "WRITE ERROR (write verify error)",
+            ErrorNumber::WriteProtectOn => "WRITE PROTECT ON",
+            ErrorNumber::ReadErrorChecksumErrorInHeader => {
                 "READ ERROR (checksum error in header)"
             }
-            Rs1541ErrorNumber::WriteErrorLongDataBlock => "WRITE ERROR (long data block)",
-            Rs1541ErrorNumber::DiskIdMismatch => "DISK ID MISMATCH",
-            Rs1541ErrorNumber::SyntaxErrorGeneralSyntax => "SYNTAX ERROR (general syntax)",
-            Rs1541ErrorNumber::SyntaxErrorInvalidCommand => "SYNTAX ERROR (invalid command)",
-            Rs1541ErrorNumber::SyntaxErrorLongLine => "SYNTAX ERROR (long line)",
-            Rs1541ErrorNumber::SyntaxErrorInvalidFileName => "SYNTAX ERROR (invalid file name)",
-            Rs1541ErrorNumber::SyntaxErrorNoFileGiven => "SYNTAX ERROR (no file given))",
-            Rs1541ErrorNumber::SyntaxErrorInvalidCommandChannel15 => {
+            ErrorNumber::WriteErrorLongDataBlock => "WRITE ERROR (long data block)",
+            ErrorNumber::DiskIdMismatch => "DISK ID MISMATCH",
+            ErrorNumber::SyntaxErrorGeneralSyntax => "SYNTAX ERROR (general syntax)",
+            ErrorNumber::SyntaxErrorInvalidCommand => "SYNTAX ERROR (invalid command)",
+            ErrorNumber::SyntaxErrorLongLine => "SYNTAX ERROR (long line)",
+            ErrorNumber::SyntaxErrorInvalidFileName => "SYNTAX ERROR (invalid file name)",
+            ErrorNumber::SyntaxErrorNoFileGiven => "SYNTAX ERROR (no file given))",
+            ErrorNumber::SyntaxErrorInvalidCommandChannel15 => {
                 "SYNTAX ERROR (invalid command on channel 15)"
             }
-            Rs1541ErrorNumber::RecordNotPresent => "RECORD NOT PRESENT",
-            Rs1541ErrorNumber::OverflowInRecord => "OVERFLOW IN RECORD",
-            Rs1541ErrorNumber::FileTooLarge => "FILE TOO LARGE",
-            Rs1541ErrorNumber::WriteFileOpen => "WRITE FILE OPEN",
-            Rs1541ErrorNumber::FileNotOpen => "FILE NOT OPEN",
-            Rs1541ErrorNumber::FileNotFound => "FILE NOT FOUND",
-            Rs1541ErrorNumber::FileExists => "FILE EXISTS",
-            Rs1541ErrorNumber::FileTypeMismatch => "FILE TYPE MISMATCH",
-            Rs1541ErrorNumber::NoBlock => "NO BLOCK",
-            Rs1541ErrorNumber::IllegalTrackAndSector => "ILLEGAL TRACK AND SECTOR",
-            Rs1541ErrorNumber::IllegalSystemTOrS => "ILLEGAL SYSTEM T OR S",
-            Rs1541ErrorNumber::NoChannel => "NO CHANNEL",
-            Rs1541ErrorNumber::DirectoryError => "DIRECTORY ERROR",
-            Rs1541ErrorNumber::DiskFull => "DISK FULL",
-            Rs1541ErrorNumber::DosMismatch => "DOS MISMATCH",
-            Rs1541ErrorNumber::DriveNotReady => "DRIVE NOT READY",
-            Rs1541ErrorNumber::Unknown => "unknown",
+            ErrorNumber::RecordNotPresent => "RECORD NOT PRESENT",
+            ErrorNumber::OverflowInRecord => "OVERFLOW IN RECORD",
+            ErrorNumber::FileTooLarge => "FILE TOO LARGE",
+            ErrorNumber::WriteFileOpen => "WRITE FILE OPEN",
+            ErrorNumber::FileNotOpen => "FILE NOT OPEN",
+            ErrorNumber::FileNotFound => "FILE NOT FOUND",
+            ErrorNumber::FileExists => "FILE EXISTS",
+            ErrorNumber::FileTypeMismatch => "FILE TYPE MISMATCH",
+            ErrorNumber::NoBlock => "NO BLOCK",
+            ErrorNumber::IllegalTrackAndSector => "ILLEGAL TRACK AND SECTOR",
+            ErrorNumber::IllegalSystemTOrS => "ILLEGAL SYSTEM T OR S",
+            ErrorNumber::NoChannel => "NO CHANNEL",
+            ErrorNumber::DirectoryError => "DIRECTORY ERROR",
+            ErrorNumber::DiskFull => "DISK FULL",
+            ErrorNumber::DosMismatch => "DOS MISMATCH",
+            ErrorNumber::DriveNotReady => "DRIVE NOT READY",
+            ErrorNumber::Unknown => "unknown",
         };
         write!(f, "{}", s)
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Rs1541ErrorNumberOk {
+pub enum ErrorNumberOk {
     Ok,
     Err,
     Number73,
@@ -570,7 +570,7 @@ mod tests {
         let result = CbmStatus::new("bibble bobble flibble flobble", 8);
         assert_eq!(
             result,
-            Err(Rs1541Error::Parse {
+            Err(Error::Parse {
                 message: "Device 8 supplied status format: bibble bobble flibble flobble"
                     .to_string()
             })
@@ -583,19 +583,19 @@ mod tests {
         assert_eq!(status.number, 21);
         assert_eq!(
             status.error_number,
-            Rs1541ErrorNumber::ReadErrorNoSyncCharacter
+            ErrorNumber::ReadErrorNoSyncCharacter
         );
         assert_eq!(status.message, "READ ERROR");
         assert_eq!(status.track, 18);
         assert_eq!(status.sector, 0);
         assert_eq!(status.device, 8);
-        assert_eq!(status.is_ok(), Rs1541ErrorNumberOk::Err);
+        assert_eq!(status.is_ok(), ErrorNumberOk::Err);
     }
 
     #[test]
     fn test_ok_status() {
         let status = CbmStatus::try_from(("00,OK,00,00", 8)).unwrap();
-        assert_eq!(status.is_ok(), Rs1541ErrorNumberOk::Ok);
+        assert_eq!(status.is_ok(), ErrorNumberOk::Ok);
         assert_eq!(status.device, 8);
         assert_eq!(status.to_string(), "00,OK,00,00");
     }
@@ -603,8 +603,8 @@ mod tests {
     #[test]
     fn test_73_status() {
         let status = CbmStatus::try_from(("73,DOS MISMATCH,00,00", 8)).unwrap();
-        assert_eq!(status.error_number, Rs1541ErrorNumber::DosMismatch);
-        assert_eq!(status.is_ok(), Rs1541ErrorNumberOk::Number73);
+        assert_eq!(status.error_number, ErrorNumber::DosMismatch);
+        assert_eq!(status.is_ok(), ErrorNumberOk::Number73);
         assert_eq!(status.to_string(), "73,DOS MISMATCH,00,00");
         assert_eq!(status.message, "DOS MISMATCH");
         assert_eq!(status.device, 8);
@@ -615,7 +615,7 @@ mod tests {
         let status = CbmStatus::try_from(("01,FILES SCRATCHED,03,00", 8)).unwrap();
         assert_eq!(status.files_scratched(), Some(3));
         assert_eq!(status.message, "FILES SCRATCHED");
-        assert_eq!(status.is_ok(), Rs1541ErrorNumberOk::Ok);
+        assert_eq!(status.is_ok(), ErrorNumberOk::Ok);
         assert_eq!(status.track, 3);
         assert_eq!(status.sector, 0);
         assert_eq!(status.device, 8);
@@ -626,7 +626,7 @@ mod tests {
         let status = CbmStatus::try_from(("21,READ ERROR,18,04", 8)).unwrap();
         assert_eq!(status.files_scratched(), None);
         assert_eq!(status.to_string(), "21,READ ERROR,18,04");
-        assert_eq!(status.is_ok(), Rs1541ErrorNumberOk::Err);
+        assert_eq!(status.is_ok(), ErrorNumberOk::Err);
         assert_eq!(status.track, 18);
         assert_eq!(status.sector, 4);
         assert_eq!(status.device, 8);
@@ -634,20 +634,20 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let error = Rs1541Error::Validation {
+        let error = Error::Validation {
             message: "Test error".to_string(),
         };
         assert_eq!(error.to_string(), "Validation error: Test error");
 
         let status = CbmStatus {
             number: 21,
-            error_number: Rs1541ErrorNumber::ReadErrorNoSyncCharacter,
+            error_number: ErrorNumber::ReadErrorNoSyncCharacter,
             message: "READ ERROR".to_string(),
             track: 18,
             sector: 0,
             device: 8,
         };
-        let error = Rs1541Error::Status { status };
+        let error = Error::Status { status };
         assert_eq!(
             error.to_string(),
             "Device 8: Status error: 21,READ ERROR,18,00"

@@ -22,8 +22,7 @@
 //! cargo run --example async
 //! ```use rs1541::Cbm;
 
-use rs1541::{Cbm, Rs1541Error};
-use std::error::Error;
+use rs1541::{Cbm, Error};
 use std::fmt;
 use std::sync::Arc;
 use tokio;
@@ -38,10 +37,10 @@ impl fmt::Display for TaskError {
     }
 }
 
-impl Error for TaskError {}
+impl std::error::Error for TaskError {}
 
 #[tokio::main]
-async fn main() -> Result<(), Rs1541Error> {
+async fn main() -> Result<(), Error> {
     env_logger::init();
 
     let cbm = Arc::new(Cbm::new()?);

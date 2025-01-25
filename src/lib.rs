@@ -49,7 +49,7 @@
 //!
 //! ## Error Handling
 //! All operations that could fail return a [`Result`] type. Specific error
-//! conditions are represented by the [`Rs1541Error`] type, which wraps both
+//! conditions are represented by the [`Error`] type, which wraps both
 //! XUM1541 errors and drive-specific error codes.
 
 // Define rs1541 modules
@@ -61,16 +61,19 @@ pub mod error;
 pub mod string;
 pub mod util;
 pub mod validate;
+pub mod drive;
 
 /// Export the public API
-pub use cbm::{Cbm, CbmChannel, CbmChannelManager, CbmChannelPurpose, CbmDriveUnit};
+pub use cbm::Cbm;
+pub use channel::{CbmChannel, CbmChannelManager, CbmChannelPurpose};
+pub use drive::CbmDriveUnit;
 pub use cbmtype::{
-    CbmDeviceInfo, CbmDeviceType, CbmOperation, CbmOperationType, CbmStatus, Rs1541ErrorNumber,
-    Rs1541ErrorNumberOk,
+    CbmDeviceInfo, CbmDeviceType, CbmOperation, CbmOperationType, CbmStatus, ErrorNumber,
+    ErrorNumberOk,
 };
 pub use channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
 pub use disk::{CbmDiskHeader, CbmFileEntry, CbmDirListing};
-pub use error::{DeviceError, Rs1541Error};
+pub use error::{DeviceError, Error};
 pub use string::{AsciiString, CbmString, PetsciiString};
 pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, petscii_to_ascii};
 pub use validate::{validate_device, DeviceValidation};
@@ -81,30 +84,30 @@ pub use xum1541::DeviceAccessKind as Xum1541DeviceAccessKind;
 pub use xum1541::Xum1541Error;
 
 /// A trait to allow us to get the Bus as a reference from a MutexGuard and
-/// automatically convert the None case to a Rs1541Error
+/// automatically convert the None case to a Error
 trait BusGuardRef {
-    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Rs1541Error>;
+    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Error>;
 }
 
 impl BusGuardRef for parking_lot::MutexGuard<'_, Option<xum1541::Bus>> {
-    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Rs1541Error> {
+    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Error> {
         self.as_ref()
-            .ok_or(Rs1541Error::Xum1541(xum1541::Xum1541Error::DeviceAccess {
+            .ok_or(Error::Xum1541(xum1541::Xum1541Error::DeviceAccess {
                 kind: xum1541::DeviceAccessKind::NoDevice,
             }))
     }
 }
 
 /// A trait to allow us to get the Bus as a mutable reference from a
-/// MutexGuard and automatically convert the None case to a Rs1541Error
+/// MutexGuard and automatically convert the None case to a Error
 trait BusGuardMut {
-    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Rs1541Error>;
+    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Error>;
 }
 
 impl<'a> BusGuardMut for parking_lot::MutexGuard<'_, Option<xum1541::Bus>> {
-    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Rs1541Error> {
+    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Error> {
         self.as_mut()
-            .ok_or(Rs1541Error::Xum1541(xum1541::Xum1541Error::DeviceAccess {
+            .ok_or(Error::Xum1541(xum1541::Xum1541Error::DeviceAccess {
                 kind: xum1541::DeviceAccessKind::NoDevice,
             }))
     }
