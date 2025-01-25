@@ -364,24 +364,6 @@ impl Cbm {
         self.scan_bus_range(MIN_DEVICE_NUM..=MAX_DEVICE_NUM)
     }
 
-    /// Detects whether the specified device actually exists
-    pub fn drive_exists(&self, device: u8) -> Result<bool, Error> {
-        let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
-        match self.bus_listen(dc) {
-            Err(Error::Xum1541(Xum1541Error::Communication {
-                kind: CommunicationKind::StatusValue { .. },
-            })) => {
-                debug!("Device {device} doesn't exist");
-                Ok(false)
-            }
-            Err(e) => Err(e.into()),
-            Ok(_) => {
-                self.bus_unlisten()?;
-                Ok(true)
-            }
-        }
-    }
-
     /// Scans the bus for devices within the range specified
     ///
     /// # Arguments
@@ -424,6 +406,24 @@ impl Cbm {
         }
 
         Ok(devices)
+    }
+
+    /// Detects whether the specified device actually exists
+    pub fn drive_exists(&self, device: u8) -> Result<bool, Error> {
+        let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
+        match self.bus_listen(dc) {
+            Err(Error::Xum1541(Xum1541Error::Communication {
+                kind: CommunicationKind::StatusValue { .. },
+            })) => {
+                debug!("Device {device} doesn't exist");
+                Ok(false)
+            }
+            Err(e) => Err(e.into()),
+            Ok(_) => {
+                self.bus_unlisten()?;
+                Ok(true)
+            }
+        }
     }
 
     /// Gets a directory listing from the device.
