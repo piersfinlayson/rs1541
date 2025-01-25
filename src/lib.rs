@@ -69,7 +69,7 @@ pub use cbmtype::{
     Rs1541ErrorNumberOk,
 };
 pub use channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
-pub use disk::CbmDirListing;
+pub use disk::{CbmDiskHeader, CbmFileEntry, CbmDirListing};
 pub use error::{DeviceError, Rs1541Error};
 pub use string::{AsciiString, CbmString, PetsciiString};
 pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, petscii_to_ascii};
