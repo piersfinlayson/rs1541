@@ -118,7 +118,8 @@ use crate::{
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use xum1541::constants::MIN_DEVICE_NUM;
-use xum1541::{Bus, BusBuilder, CommunicationKind, DeviceChannel, Xum1541Error};
+use xum1541::{Bus, BusBuilder, CommunicationKind, DeviceChannel};
+use xum1541::Error as Xum1541Error;
 
 use std::collections::HashMap;
 use std::ops::RangeInclusive;

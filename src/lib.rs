@@ -81,7 +81,7 @@ pub use validate::{validate_device, DeviceValidation};
 // Export DeviceChannel as we use in our API
 pub use xum1541::buscmd::DeviceChannel;
 pub use xum1541::DeviceAccessKind as Xum1541DeviceAccessKind;
-pub use xum1541::Xum1541Error;
+pub use xum1541::Error as Xum1541Error;
 
 /// A trait to allow us to get the Bus as a reference from a MutexGuard and
 /// automatically convert the None case to a Error
@@ -92,7 +92,7 @@ trait BusGuardRef {
 impl BusGuardRef for parking_lot::MutexGuard<'_, Option<xum1541::Bus>> {
     fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Error> {
         self.as_ref()
-            .ok_or(Error::Xum1541(xum1541::Xum1541Error::DeviceAccess {
+            .ok_or(Error::Xum1541(xum1541::Error::DeviceAccess {
                 kind: xum1541::DeviceAccessKind::NoDevice,
             }))
     }
@@ -107,7 +107,7 @@ trait BusGuardMut {
 impl<'a> BusGuardMut for parking_lot::MutexGuard<'_, Option<xum1541::Bus>> {
     fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Error> {
         self.as_mut()
-            .ok_or(Error::Xum1541(xum1541::Xum1541Error::DeviceAccess {
+            .ok_or(Error::Xum1541(xum1541::Error::DeviceAccess {
                 kind: xum1541::DeviceAccessKind::NoDevice,
             }))
     }
