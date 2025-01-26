@@ -118,8 +118,8 @@ use crate::{
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use xum1541::constants::MIN_DEVICE_NUM;
-use xum1541::{Bus, BusBuilder, CommunicationKind, DeviceChannel};
 use xum1541::Error as Xum1541Error;
+use xum1541::{Bus, BusBuilder, CommunicationKind, DeviceChannel};
 
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -476,7 +476,6 @@ impl Cbm {
             None => PetsciiString::from_petscii_bytes(&[b'$']),
         };
 
-        // Load the file
         let dir_data = self.load_file_petscii(device, &filename)?;
 
         // Process it
@@ -1102,6 +1101,8 @@ impl Cbm {
         device: u8,
         filename: &PetsciiString,
     ) -> Result<Vec<u8>, Error> {
+        debug!("Load file device: {device} filename: {filename}");
+
         // Open the file
         let dc = DeviceChannel::new(device, CBM_CHANNEL_LOAD)?;
         Self::open_file_petscii_locked(bus, dc, filename)?;

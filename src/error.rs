@@ -2,8 +2,8 @@ use crate::CbmStatus;
 use libc::{EINVAL, EIO, ENODEV, ETIMEDOUT};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use xum1541::Error as Xum1541Error;
 use xum1541::DeviceChannel;
+use xum1541::Error as Xum1541Error;
 
 #[derive(Debug, Error, PartialEq, Serialize, Deserialize)]
 pub enum Error {

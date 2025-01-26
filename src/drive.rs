@@ -2,6 +2,10 @@ use crate::cbm::Cbm;
 use crate::cbmtype::{CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmStatus};
 use crate::channel::CbmChannelManager;
 use crate::error::{DeviceError, Error};
+use crate::CbmDirListing;
+
+#[allow(unused_imports)]
+use log::{debug, error, info, trace, warn};
 
 use parking_lot::Mutex;
 use std::fmt;
@@ -81,9 +85,9 @@ impl CbmDriveUnit {
     /// and type. It initializes the channel manager but does not perform any
     /// hardware communication.
     ///
-    /// You may prefer [`CbmDriveUnit::try_from_bus`] as this will check the 
+    /// You may prefer [`CbmDriveUnit::try_from_bus`] as this will check the
     /// device exists and automatically get it's type before creating.
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `device_number` - The IEC device number
@@ -268,5 +272,41 @@ impl CbmDriveUnit {
     /// ```
     pub fn is_busy(&self) -> bool {
         self.busy
+    }
+
+    pub fn dir(&self, cbm: &mut Cbm) -> Result<Vec<CbmDirListing>, Error> {
+        let mut results = Vec::new();
+
+        // Single unit drives do not like to be asked to load $0 - so don't
+        // pass in the drive unit number in that case
+        // A single drive unit will respond 74 if asked to dir $0
+        let single_drive_unit = self.num_disk_drives() == 1;
+
+        // Do dir for all drive units
+        for ii in self.num_disk_drives_iter() {
+            debug!("Doing dir of device {} drive {}", self.device_number, ii);
+            let drive_unit_num = if single_drive_unit { None } else { Some(ii) };
+            match cbm.dir(self.device_number, drive_unit_num) {
+                Err(e @ Error::Device { .. }) | Err(e @ Error::Status { .. }) => {
+                    debug!(
+                        "Got error trying to dir device {} drive {}: {}",
+                        self.device_number, ii, e
+                    );
+                    continue;
+                }
+                Err(e) => {
+                    info!(
+                        "Hit unrecoverable error trying to dir device {} drive {}: {}",
+                        self.device_number, ii, e
+                    );
+                    return Err(e);
+                }
+                Ok(result) => {
+                    results.push(result);
+                }
+            }
+        }
+
+        Ok(results)
     }
 }

@@ -95,7 +95,7 @@ impl CbmFileMode {
 ///     }
 /// }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CbmFileEntry {
     /// Represents a successfully parsed directory entry.
     ///
@@ -193,11 +193,11 @@ impl fmt::Display for CbmFileEntry {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CbmDiskHeader {
-    drive_number: u8,
-    name: String,
-    id: String,
+    pub drive_number: u8,
+    pub name: String,
+    pub id: String,
 }
 
 /// Common disk header constants
@@ -267,16 +267,16 @@ impl fmt::Display for CbmDiskHeader {
 /// - The ID is always exactly 2 characters
 /// - Special characters in the name are stored in PETSCII but converted to ASCII for display
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CbmDirListing {
     /// The drive number (0 or 1) where this disk is mounted
-    header: CbmDiskHeader,
+    pub header: CbmDiskHeader,
 
     /// The name of the disk (up to 16 characters)
-    files: Vec<CbmFileEntry>,
+    pub files: Vec<CbmFileEntry>,
 
     /// The two-character disk ID
-    blocks_free: u16,
+    pub blocks_free: u16,
 }
 
 impl fmt::Display for CbmDirListing {
@@ -438,5 +438,9 @@ impl CbmDirListing {
         caps[1].parse().map_err(|_| Error::Parse {
             message: format!("Invalid blocks free number: {}", &caps[1]),
         })
+    }
+
+    pub fn num_files(&self) -> usize {
+        self.files.len()
     }
 }
