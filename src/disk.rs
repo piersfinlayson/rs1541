@@ -6,6 +6,8 @@ use crate::error::Error;
 use log::{debug, error, info, trace, warn};
 use std::fmt;
 
+const BYTES_PER_BLOCK: u64 = 254;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CbmFileType {
     PRG,
@@ -16,7 +18,7 @@ pub enum CbmFileType {
 }
 
 impl CbmFileType {
-    fn _to_suffix(&self) -> &'static str {
+    pub fn _to_suffix(&self) -> &'static str {
         match self {
             CbmFileType::PRG => ",P",
             CbmFileType::SEQ => ",S",
@@ -128,6 +130,21 @@ pub enum CbmFileEntry {
         partial_blocks: Option<u16>,      // In case we at least got the blocks
         partial_filename: Option<String>, // In case we at least got the filename
     },
+}
+
+impl CbmFileEntry {
+    pub fn max_size(&self) -> Option<u64> {
+        match self {
+            CbmFileEntry::ValidFile { blocks, .. } => Some((*blocks as u64) * BYTES_PER_BLOCK),
+            CbmFileEntry::InvalidFile { partial_blocks, .. } => {
+                if let Some(blocks) = partial_blocks {
+                    Some((*blocks as u64) * BYTES_PER_BLOCK)
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }
 
 impl fmt::Display for CbmFileEntry {

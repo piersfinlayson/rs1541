@@ -71,7 +71,7 @@ pub use cbmtype::{
 };
 pub use channel::{CbmChannel, CbmChannelManager, CbmChannelPurpose};
 pub use channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
-pub use disk::{CbmDirListing, CbmDiskHeader, CbmFileEntry};
+pub use disk::{CbmDirListing, CbmDiskHeader, CbmFileEntry, CbmFileType};
 pub use drive::CbmDriveUnit;
 pub use error::{DeviceError, Error};
 pub use string::{AsciiString, CbmString, PetsciiString};
