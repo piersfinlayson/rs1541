@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - new modules for various objects
 - Add [`CbmDriveUnit::try_from_bus`]
 - Add [`CbmDriveunit::dir`]
+- Changed [`CbmDriveUnit`] to take and sore [`CbmDeviceInfo`] rather than [`CbmDeviceType`]
 
 ### Changed
 - Moved away from opencbm bindings to A Rust native xum1541 implementation (xum1541)

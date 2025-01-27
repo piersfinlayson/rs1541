@@ -390,6 +390,38 @@ impl CbmDeviceType {
             Self::FdX000 => 1,
         }
     }
+
+    pub fn description(&self, magic: u16, magic2: Option<u16>) -> String {
+        match self {
+            CbmDeviceType::Cbm2031 => String::from("2031"),
+            CbmDeviceType::Cbm1540 => String::from("1540"),
+            CbmDeviceType::Cbm1541 => match magic {
+                0xf00f => String::from("1541-II"),
+                0xcd18 => String::from("1541C"),
+                0x10ca => String::from("DolphinDOS 1541"),
+                0x6f10 => String::from("SpeedDOS 1541"),
+                0x2710 => String::from("ProfessionalDOS 1541"),
+                0x8085 => String::from("JiffyDOS 1541"),
+                0xaeea => String::from("64'er DOS 1541"),
+                0x180d => String::from("Turbo Access / Turbo Trans"),
+                0x094c => String::from("Prologic DOS"),
+                _ => String::from("1541"),
+            },
+            CbmDeviceType::Cbm1571 => String::from("1571"),
+            CbmDeviceType::Cbm1570 => String::from("1570"),
+            CbmDeviceType::Cbm1581 => String::from("1581"),
+            CbmDeviceType::Cbm3040 => String::from("3040"),
+            CbmDeviceType::Cbm4040 => String::from("4040"),
+            CbmDeviceType::Cbm8050 => String::from("8050 dos2.5"),
+            CbmDeviceType::Cbm8250 => String::from("8250 dos2.7"),
+            CbmDeviceType::FdX000 => String::from("FD2000/FD4000"),
+            CbmDeviceType::Unknown => match magic2 {
+                Some(m2) => format!("Unknown device: {:04x} {:04x}", magic, m2),
+                None => format!("Unknown device: {:04x}", magic),
+            },
+            _ => String::from("Unknown"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -1,5 +1,5 @@
 use crate::cbm::Cbm;
-use crate::cbmtype::{CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmStatus};
+use crate::cbmtype::{CbmErrorNumber, CbmErrorNumberOk, CbmStatus, CbmDeviceInfo};
 use crate::channel::CbmChannelManager;
 use crate::error::{DeviceError, Error};
 use crate::CbmDirListing;
@@ -19,7 +19,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct CbmDriveUnit {
     pub device_number: u8,
-    pub device_type: CbmDeviceType,
+    pub device_info: CbmDeviceInfo,
     channel_manager: Arc<Mutex<CbmChannelManager>>,
     busy: bool,
 }
@@ -36,7 +36,7 @@ impl fmt::Display for CbmDriveUnit {
     /// println!("{}", drive); // Outputs: "Drive 8 (1541)"
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Drive {} ({})", self.device_number, self.device_type)
+        write!(f, "Drive {} ({})", self.device_number, self.device_info)
     }
 }
 
@@ -70,7 +70,7 @@ impl CbmDriveUnit {
     pub fn try_from_bus(cbm: &Cbm, device: u8) -> Result<Self, Error> {
         if cbm.drive_exists(device)? {
             let info = cbm.identify(device)?;
-            Ok(Self::new(device, info.device_type))
+            Ok(Self::new(device, info))
         } else {
             Err(Error::Device {
                 device,
@@ -91,18 +91,13 @@ impl CbmDriveUnit {
     /// # Arguments
     ///
     /// * `device_number` - The IEC device number
-    /// * `device_type` - The type of drive (e.g., Cbm1541, Cbm1571)
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
-    /// ```
-    pub fn new(device_number: u8, device_type: CbmDeviceType) -> Self {
+    /// * `device_info` - The [`crate::CbmDeviceInfo`]
+
+    pub fn new(device_number: u8, device_info: CbmDeviceInfo) -> Self {
         // Test whether this device is actually attached
         Self {
             device_number,
-            device_type,
+            device_info,
             channel_manager: Arc::new(Mutex::new(CbmChannelManager::new())),
             busy: false,
         }
@@ -163,9 +158,9 @@ impl CbmDriveUnit {
     /// ```no_run
     /// use rs1541::{Cbm, CbmDriveUnit, CbmDeviceType, CbmErrorNumber};
     /// let mut cbm = Cbm::new().unwrap();
-    /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm4040);
+    /// let mut drive = CbmDriveUnit::try_from_bus(&cbm, 8).unwrap();
     ///
-    /// // Initialize both drives, ignoring "drive not ready" errors
+    /// // Initialize all drives, ignoring "drive not ready" errors
     /// let status_vec = drive.send_init(&mut cbm, &vec![CbmErrorNumber::DriveNotReady]);
     /// // Now process the status_vec
     /// ```
@@ -221,7 +216,19 @@ impl CbmDriveUnit {
     /// assert_eq!(drive.num_disk_drives(), 2);
     /// ```
     pub fn num_disk_drives(&self) -> u8 {
-        self.device_type.num_disk_drives()
+        self.device_info.device_type.num_disk_drives()
+    }
+
+    pub fn device_info(&self) -> &CbmDeviceInfo {
+        &self.device_info
+    }
+
+    pub fn device_type_str(&self) -> &str {
+        self.device_info.device_type.as_str()
+    }
+
+    pub fn description(&self) -> &str {
+        &self.device_info.description
     }
 
     /// Returns an iterator over the drive numbers in this unit.
