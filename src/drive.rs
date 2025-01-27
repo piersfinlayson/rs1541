@@ -281,24 +281,40 @@ impl CbmDriveUnit {
         self.busy
     }
 
-    pub fn dir(&self, cbm: &mut Cbm) -> Result<Vec<CbmDirListing>, Error> {
+    /// Does a directory for all disk units in this drive
+    ///
+    /// # Returns
+    ///
+    /// [`(Vec<CbmDirListing>, CbmStatus)`] - If at least partially successful.  The CbmStatus will be from the first failure if one occured.  Partial success means a directory listing was secured from at least one of the drives, and we didn't hit a fatal error during communication
+    /// [`Error`] - if a serious error occurred.
+    pub fn dir(&self, cbm: &mut Cbm) -> Result<(Vec<CbmDirListing>, CbmStatus), Error> {
         let mut results = Vec::new();
 
         // Single unit drives do not like to be asked to load $0 - so don't
         // pass in the drive unit number in that case
         // A single drive unit will respond 74 if asked to dir $0
         let single_drive_unit = self.num_disk_drives() == 1;
+        let mut error_status = None;
 
         // Do dir for all drive units
         for ii in self.num_disk_drives_iter() {
             debug!("Doing dir of device {} drive {}", self.device_number, ii);
             let drive_unit_num = if single_drive_unit { None } else { Some(ii) };
             match cbm.dir(self.device_number, drive_unit_num) {
-                Err(e @ Error::Device { .. }) | Err(e @ Error::Status { .. }) => {
+                Err(e @ Error::Device { .. })=>
+                {
                     debug!(
                         "Got error trying to dir device {} drive {}: {}",
                         self.device_number, ii, e
                     );
+                    continue;
+                }
+                Err(Error::Status { status, .. }) => {
+                    debug!(
+                        "Got error status trying to dir device {} drive {}: {}",
+                        self.device_number, ii, status
+                    );
+                    error_status = Some(status.clone());
                     continue;
                 }
                 Err(e) => {
@@ -314,6 +330,9 @@ impl CbmDriveUnit {
             }
         }
 
-        Ok(results)
+        // If we have an error status return that.  Otherwise do a final status check now and return that 
+        let status = error_status.unwrap_or(cbm.get_status(self.device_number)?);
+
+        Ok((results, status))
     }
 }

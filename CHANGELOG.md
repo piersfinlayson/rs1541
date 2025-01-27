@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - Add [`CbmDriveUnit::try_from_bus`]
 - Add [`CbmDriveunit::dir`]
 - Changed [`CbmDriveUnit`] to take and sore [`CbmDeviceInfo`] rather than [`CbmDeviceType`]
+- Added [`DosVersion`]
+- Changed [`CbmDriveUnit::dir`] to return a CbmStatus alongside the directory listing
 
 ### Changed
 - Moved away from opencbm bindings to A Rust native xum1541 implementation (xum1541)

@@ -67,7 +67,7 @@ pub mod validate;
 pub use cbm::Cbm;
 pub use cbmtype::{
     CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmOperation, CbmOperationType,
-    CbmStatus,
+    CbmStatus, DosVersion, 
 };
 pub use channel::{CbmChannel, CbmChannelManager, CbmChannelPurpose};
 pub use channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};

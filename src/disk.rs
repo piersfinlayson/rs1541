@@ -460,4 +460,17 @@ impl CbmDirListing {
     pub fn num_files(&self) -> usize {
         self.files.len()
     }
+
+    pub fn num_blocks_used_valid(&self) -> u16 {
+        self.files.iter()
+            .map(|entry| match entry {
+                CbmFileEntry::ValidFile { blocks, .. } => *blocks,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    pub fn total_blocks(&self) -> u16 {
+        self.num_blocks_used_valid() + self.blocks_free
+    }
 }
