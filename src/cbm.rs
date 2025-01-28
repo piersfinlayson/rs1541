@@ -113,6 +113,7 @@ use crate::{
     BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDirListing, CbmErrorNumberOk, CbmStatus, CbmString,
     DeviceError, Error, MAX_DEVICE_NUM,
 };
+use crate::disk::BYTES_PER_BLOCK;
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
@@ -909,14 +910,14 @@ impl Cbm {
 
         let mut data = Vec::new();
         loop {
-            let buf = &mut [0u8; 256];
+            let buf = &mut [0u8; BYTES_PER_BLOCK];
             let count = Self::bus_read_locked(bus, dc, buf).map_err(|e| Error::File {
                 device,
                 message: format!("Read failed: {}", e),
             })?;
 
             data.extend_from_slice(&buf[..count as usize]);
-            if count < 256 {
+            if count < BYTES_PER_BLOCK {
                 debug!("Finished reading file");
                 break;
             }
@@ -984,7 +985,7 @@ impl Cbm {
         })?;
 
         // Write data in chunks
-        for chunk in data.chunks(256) {
+        for chunk in data.chunks(BYTES_PER_BLOCK) {
             let result = bus.write(chunk).map_err(|e| Error::File {
                 device,
                 message: format!("Write failed: {}", e),
@@ -1113,9 +1114,9 @@ impl Cbm {
             let _ = Self::close_file_locked(bus, dc);
         })?;
 
-        // Read in 256 byte chunks
+        // Read in BYTES_PER_BLOCK byte chunks
         let mut buffer = Vec::new();
-        let mut read_buf = [0u8; 256];
+        let mut read_buf = [0u8; BYTES_PER_BLOCK];
         let read_result = loop {
             match Self::bus_read_locked(bus, dc, &mut read_buf) {
                 Ok(bytes_read) if bytes_read == 0 => break Ok(buffer),

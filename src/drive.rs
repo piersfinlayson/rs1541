@@ -3,6 +3,7 @@ use crate::cbmtype::{CbmErrorNumber, CbmErrorNumberOk, CbmStatus, CbmDeviceInfo}
 use crate::channel::CbmChannelManager;
 use crate::error::{DeviceError, Error};
 use crate::CbmDirListing;
+use crate::CbmString;
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
@@ -334,5 +335,13 @@ impl CbmDriveUnit {
         let status = error_status.unwrap_or(cbm.get_status(self.device_number)?);
 
         Ok((results, status))
+    }
+
+    pub fn read_file(&self, cbm: &mut Cbm, filename: &CbmString) -> Result<(Vec<u8>, CbmStatus), Error> {
+        let data = cbm.load_file_petscii(self.device_number, &filename.to_petscii())?;
+
+        let status = cbm.get_status(self.device_number)?;
+
+        Ok((data, status))
     }
 }

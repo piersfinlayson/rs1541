@@ -6,7 +6,7 @@ use crate::error::Error;
 use log::{debug, error, info, trace, warn};
 use std::fmt;
 
-const BYTES_PER_BLOCK: u64 = 254;
+pub(crate) const BYTES_PER_BLOCK: usize = 254;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CbmFileType {
@@ -135,10 +135,10 @@ pub enum CbmFileEntry {
 impl CbmFileEntry {
     pub fn max_size(&self) -> Option<u64> {
         match self {
-            CbmFileEntry::ValidFile { blocks, .. } => Some((*blocks as u64) * BYTES_PER_BLOCK),
+            CbmFileEntry::ValidFile { blocks, .. } => Some((*blocks as u64) * (BYTES_PER_BLOCK as u64)),
             CbmFileEntry::InvalidFile { partial_blocks, .. } => {
                 if let Some(blocks) = partial_blocks {
-                    Some((*blocks as u64) * BYTES_PER_BLOCK)
+                    Some((*blocks as u64) * (BYTES_PER_BLOCK as u64))
                 } else {
                     None
                 }

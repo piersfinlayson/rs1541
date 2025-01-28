@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2025-??-??
+### Adeed
+- [`Drive::read_file`]
+
 ## [0.2.0] - 2025-01-27
 ### Added
 - [`Cbm::scan_bus`] and [`Cbm::scan_bus_range`]
