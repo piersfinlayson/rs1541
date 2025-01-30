@@ -15,7 +15,7 @@
 //! - [`crate::drive::CbmDriveUnit`]: Represents a physical drive unit, managing its channels and state.
 //!   A drive unit may contain one or two drives (like the 1541 vs 1571).
 //!
-//! - [`crate::channel::CbmChannel`]: Represents a communication channel to a drive. CBM drives use a
+//! - [`CbmChannel`]: Represents a communication channel to a drive. CBM drives use a
 //!   channel-based communication system, with 16 channels (0-15) available per drive.
 //!   Channel 15 is reserved for commands.
 //!
@@ -158,6 +158,9 @@ use std::sync::Arc;
 pub struct Cbm<D: Device> {
     handle: Arc<Mutex<Option<Bus<D>>>>,
 }
+// We are instructing the compiler that the Cbm struct is safe to send
+// between threads, because even though D isn't, it is wrapped in an Arc
+// and Mutex
 
 impl Cbm<UsbDevice> {
     /// Creates a new CBM instance and opens the xum1541 USB driver.
@@ -201,6 +204,7 @@ impl Cbm<UsbDevice> {
         let bus = builder.build()?;
         Ok(Self::new(bus))
     }
+
 
     /// Resets the USB device connection - by closing the driver then reopening
     /// which in turn will force a device reset

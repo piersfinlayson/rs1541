@@ -1,5 +1,5 @@
 use crate::cbm::Cbm;
-use crate::cbmtype::{CbmDeviceInfo, CbmErrorNumber, CbmErrorNumberOk, CbmStatus};
+use crate::cbmtype::{CbmErrorNumber, CbmErrorNumberOk, CbmStatus, CbmDeviceInfo};
 use crate::channel::CbmChannelManager;
 use crate::error::{DeviceError, Error};
 use crate::CbmDirListing;
@@ -12,8 +12,8 @@ use log::{debug, error, info, trace, warn};
 
 use parking_lot::Mutex;
 use std::fmt;
-use std::marker::PhantomData;
 use std::sync::Arc;
+use std::marker::PhantomData;
 
 /// Represents a physical drive unit
 ///
@@ -21,7 +21,8 @@ use std::sync::Arc;
 /// which may contain one or two drives.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct CbmDriveUnit<D: Device> {
+pub struct CbmDriveUnit<D: Device>
+{
     pub device_number: u8,
     pub device_info: CbmDeviceInfo,
     channel_manager: Arc<Mutex<CbmChannelManager>>,
@@ -65,7 +66,7 @@ impl<D: Device> fmt::Display for CbmDriveUnit<D> {
 /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
 ///
 /// // Initialize both drives if this is a dual unit
-/// let cbm = Cbm::new_usb(None)?;
+/// let cbm = Cbm::new()?;
 /// let status = drive.send_init(cbm, &vec![])?;
 /// ```
 ///
@@ -129,7 +130,7 @@ impl<D: Device> CbmDriveUnit<D> {
     ///
     /// ```ignore
     /// let mut drive = CbmDriveUnit::new(8, CbmDeviceType::Cbm1541);
-    /// let cbm = Cbm::new_usb(None)?;
+    /// let cbm = Cbm::new()?;
     /// let status = drive.get_status(&cbm)?;
     /// println!("Drive status: {}", status);
     /// ```
@@ -163,7 +164,7 @@ impl<D: Device> CbmDriveUnit<D> {
     ///
     /// ```no_run
     /// use rs1541::{Cbm, CbmDriveUnit, CbmDeviceType, CbmErrorNumber};
-    /// let mut cbm = Cbm::new_usb(None).unwrap();
+    /// let mut cbm = Cbm::new().unwrap();
     /// let mut drive = CbmDriveUnit::try_from_bus(&cbm, 8).unwrap();
     ///
     /// // Initialize all drives, ignoring "drive not ready" errors
@@ -307,7 +308,8 @@ impl<D: Device> CbmDriveUnit<D> {
             debug!("Doing dir of device {} drive {}", self.device_number, ii);
             let drive_unit_num = if single_drive_unit { None } else { Some(ii) };
             match cbm.dir(self.device_number, drive_unit_num) {
-                Err(e @ Error::Device { .. }) => {
+                Err(e @ Error::Device { .. })=>
+                {
                     debug!(
                         "Got error trying to dir device {} drive {}: {}",
                         self.device_number, ii, e
@@ -335,17 +337,13 @@ impl<D: Device> CbmDriveUnit<D> {
             }
         }
 
-        // If we have an error status return that.  Otherwise do a final status check now and return that
+        // If we have an error status return that.  Otherwise do a final status check now and return that 
         let status = error_status.unwrap_or(cbm.get_status(self.device_number)?);
 
         Ok((results, status))
     }
 
-    pub fn read_file(
-        &self,
-        cbm: &mut Cbm<D>,
-        filename: &CbmString,
-    ) -> Result<(Vec<u8>, CbmStatus), Error> {
+    pub fn read_file(&self, cbm: &mut Cbm<D>, filename: &CbmString) -> Result<(Vec<u8>, CbmStatus), Error> {
         let data = cbm.load_file_petscii(self.device_number, &filename.to_petscii())?;
 
         let status = cbm.get_status(self.device_number)?;
