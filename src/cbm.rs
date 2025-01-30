@@ -205,7 +205,6 @@ impl Cbm<UsbDevice> {
         Ok(Self::new(bus))
     }
 
-
     /// Resets the USB device connection - by closing the driver then reopening
     /// which in turn will force a device reset
     ///
