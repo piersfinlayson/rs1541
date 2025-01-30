@@ -49,7 +49,7 @@ fn main() -> Result<(), Error> {
     log::info!("Started logging");
 
     // Driver automatically opens on creation and closes on drop
-    let cbm = match Cbm::new() {
+    let cbm = match Cbm::new_usb(None) {
         Err(Error::Xum1541(error)) => match error {
             Xum1541Error::DeviceAccess { .. } | Xum1541Error::Usb(_) => {
                 println!("Failed to connect to xum1541 device\nError: {error}");

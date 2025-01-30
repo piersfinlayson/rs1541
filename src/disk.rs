@@ -135,7 +135,9 @@ pub enum CbmFileEntry {
 impl CbmFileEntry {
     pub fn max_size(&self) -> Option<u64> {
         match self {
-            CbmFileEntry::ValidFile { blocks, .. } => Some((*blocks as u64) * (BYTES_PER_BLOCK as u64)),
+            CbmFileEntry::ValidFile { blocks, .. } => {
+                Some((*blocks as u64) * (BYTES_PER_BLOCK as u64))
+            }
             CbmFileEntry::InvalidFile { partial_blocks, .. } => {
                 if let Some(blocks) = partial_blocks {
                     Some((*blocks as u64) * (BYTES_PER_BLOCK as u64))
@@ -462,7 +464,8 @@ impl CbmDirListing {
     }
 
     pub fn num_blocks_used_valid(&self) -> u16 {
-        self.files.iter()
+        self.files
+            .iter()
             .map(|entry| match entry {
                 CbmFileEntry::ValidFile { blocks, .. } => *blocks,
                 _ => 0,

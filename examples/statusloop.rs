@@ -1,6 +1,6 @@
 use clap::Parser;
 /// Loops retrieving status from a drive
-use rs1541::{Cbm, Error, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
+use rs1541::{Cbm, Error, DEVICE_MAX_NUM, DEVICE_MIN_NUM};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
@@ -18,8 +18,8 @@ struct Args {
 fn main() -> Result<(), Error> {
     // Parse command line arguments
     let args = Args::parse();
-    if args.device < MIN_DEVICE_NUM || args.device > MAX_DEVICE_NUM {
-        eprintln!("Error: device number must be between {MIN_DEVICE_NUM} and {MAX_DEVICE_NUM}");
+    if args.device < DEVICE_MIN_NUM || args.device > DEVICE_MAX_NUM {
+        eprintln!("Error: device number must be between {DEVICE_MIN_NUM} and {DEVICE_MAX_NUM}");
         std::process::exit(1);
     }
 
@@ -32,7 +32,7 @@ fn main() -> Result<(), Error> {
     .expect("Error setting Ctrl-C handler");
 
     // Create CBM interface
-    let cbm = Cbm::new()?;
+    let cbm = Cbm::new_usb(None)?;
 
     let mut success_count = 0u64;
     let mut fail_count = 0u64;

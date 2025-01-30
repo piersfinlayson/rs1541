@@ -1,7 +1,7 @@
 use log::trace;
 
 use crate::Error;
-use crate::{DEFAULT_DEVICE_NUM, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
+use crate::{DEFAULT_DEVICE_NUM, DEVICE_MAX_NUM, DEVICE_MIN_NUM};
 
 pub enum DeviceValidation {
     Required, // Cannot be None
@@ -20,12 +20,12 @@ pub fn validate_device(
 ) -> Result<Option<u8>, Error> {
     match (device, validation) {
         (Some(nm), _) => {
-            if nm < MIN_DEVICE_NUM || nm > MAX_DEVICE_NUM {
+            if nm < DEVICE_MIN_NUM || nm > DEVICE_MAX_NUM {
                 trace!("Device num out of allowed range {}", nm);
                 Err(Error::Validation {
                     message: format!(
                         "Device num must be between {} and {}",
-                        MIN_DEVICE_NUM, MAX_DEVICE_NUM
+                        DEVICE_MIN_NUM, DEVICE_MAX_NUM
                     ),
                 })
             } else {

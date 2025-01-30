@@ -24,7 +24,7 @@
 //!
 //! fn main() -> Result<(), Box<dyn Error>> {
 //!     // Driver automatically opens on creation and closes on drop
-//!     let cbm = Cbm::new()?;
+//!     let cbm = Cbm::new_usb(None)?;
 //!
 //!     // Get drive information
 //!     let id = cbm.identify(8)?;
@@ -65,9 +65,12 @@ pub mod validate;
 
 /// Export the public API
 pub use cbm::Cbm;
+/// USB implementation of the Cbm object, used to create and use a USB connected XUM1541
+pub type UsbCbm = Cbm<UsbDevice>;
+pub type RemoteUsbCbm = Cbm<RemoteUsbDevice>;
 pub use cbmtype::{
     CbmDeviceInfo, CbmDeviceType, CbmErrorNumber, CbmErrorNumberOk, CbmOperation, CbmOperationType,
-    CbmStatus, DosVersion, 
+    CbmStatus, DosVersion,
 };
 pub use channel::{CbmChannel, CbmChannelManager, CbmChannelPurpose};
 pub use channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
@@ -79,47 +82,48 @@ pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, pet
 pub use validate::{validate_device, DeviceValidation};
 
 // Export DeviceChannel as we use in our API
-pub use xum1541::buscmd::DeviceChannel;
-pub use xum1541::DeviceAccessKind as Xum1541DeviceAccessKind;
+pub use xum1541::DeviceAccessError;
+pub use xum1541::DeviceChannel;
 pub use xum1541::Error as Xum1541Error;
+pub use xum1541::{Device, RemoteUsbDevice, UsbDevice};
 
 /// A trait to allow us to get the Bus as a reference from a MutexGuard and
 /// automatically convert the None case to a Error
-trait BusGuardRef {
-    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Error>;
+trait BusGuardRef<D>
+where
+    D: Device,
+{
+    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus<D>, Error>;
 }
 
-impl BusGuardRef for parking_lot::MutexGuard<'_, Option<xum1541::Bus>> {
-    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus, Error> {
+impl<D: Device> BusGuardRef<D> for parking_lot::MutexGuard<'_, Option<xum1541::Bus<D>>> {
+    fn bus_ref_or_err(&self) -> Result<&xum1541::Bus<D>, Error> {
         self.as_ref()
             .ok_or(Error::Xum1541(xum1541::Error::DeviceAccess {
-                kind: xum1541::DeviceAccessKind::NoDevice,
+                kind: xum1541::DeviceAccessError::NoDevice,
             }))
     }
 }
 
 /// A trait to allow us to get the Bus as a mutable reference from a
 /// MutexGuard and automatically convert the None case to a Error
-trait BusGuardMut {
-    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Error>;
+trait BusGuardMut<D>
+where
+    D: Device,
+{
+    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus<D>, Error>;
 }
 
-impl<'a> BusGuardMut for parking_lot::MutexGuard<'_, Option<xum1541::Bus>> {
-    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus, Error> {
+impl<'a, D: Device> BusGuardMut<D> for parking_lot::MutexGuard<'_, Option<xum1541::Bus<D>>> {
+    fn bus_mut_or_err(&mut self) -> Result<&mut xum1541::Bus<D>, Error> {
         self.as_mut()
             .ok_or(Error::Xum1541(xum1541::Error::DeviceAccess {
-                kind: xum1541::DeviceAccessKind::NoDevice,
+                kind: xum1541::DeviceAccessError::NoDevice,
             }))
     }
 }
 
-/// Minimum device number supported by Commodore disk drives
-pub const MIN_DEVICE_NUM: u8 = 8;
-
-/// Maximum device number supported by Commodor disk drives
-/// At least the later devices (such as the 1571) can be set to support up to
-/// device 30, in software
-pub const MAX_DEVICE_NUM: u8 = 30;
+pub use xum1541::constants::{DEVICE_MAX_NUM, DEVICE_MIN_NUM};
 
 /// Default device number for Commodore disk drives
 pub const DEFAULT_DEVICE_NUM: u8 = 8;

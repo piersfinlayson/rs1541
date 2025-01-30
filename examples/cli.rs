@@ -1,7 +1,11 @@
+use rs1541::{AsciiString, Cbm, CbmString, Error, DEVICE_MAX_NUM, DEVICE_MIN_NUM};
+use xum1541::{Device, RemoteUsbDeviceConfig};
+
 use clap::Parser;
-use log::{info, LevelFilter};
-use rs1541::{AsciiString, Cbm, CbmString, Error, MAX_DEVICE_NUM, MIN_DEVICE_NUM};
+#[allow(unused_imports)]
+use log::{debug, error, info, trace, warn, LevelFilter};
 use rustyline::{error::ReadlineError, DefaultEditor};
+use std::net::SocketAddr;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -13,11 +17,22 @@ struct Args {
     /// Verbosity level (-v for Info, -vv for Debug, -vvv for Trace)
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Use remote USB connection instead of local USB
+    #[arg(short, long)]
+    remote: bool,
+
+    /// Remote server IP address (IPv4 only)
+    #[arg(long, default_value = "127.0.0.1")]
+    remote_ip: String,
+
+    /// Remote server port number
+    #[arg(long, default_value_t = xum1541::device::remoteusb::DEFAULT_PORT)]
+    remote_port: u16,
 }
 
 fn main() -> Result<(), Error> {
     let args = Args::parse();
-    let mut device = args.device;
 
     // Setup logging
     env_logger::builder()
@@ -32,8 +47,28 @@ fn main() -> Result<(), Error> {
 
     info!("rs1541 Test Application");
 
-    // Create CBM interface
-    let mut cbm = Cbm::new()?;
+    // Create Cbm object and run the program
+    if args.remote {
+        let addr: SocketAddr = format!("{}:{}", args.remote_ip, args.remote_port)
+            .parse()
+            .map_err(|e| Error::Validation {
+                message: format!("Invalid remote address: {}", e),
+            })?;
+
+        let config = RemoteUsbDeviceConfig {
+            serial_num: None,
+            remote_addr: Some(addr),
+        };
+        let cbm = Cbm::new_remote_usb(Some(config))?;
+        run(cbm, args)
+    } else {
+        let cbm = Cbm::new_usb(None)?;
+        run(cbm, args)
+    }
+}
+
+fn run<D: Device>(cbm: Cbm<D>, args: Args) -> Result<(), Error> {
+    let mut device = args.device;
 
     // Setup command line editor
     let mut rl = DefaultEditor::new()
@@ -107,12 +142,12 @@ fn main() -> Result<(), Error> {
                                 (Ok(min), Ok(max))
                                     if min <= max
                                         && (8..=15).contains(&min)
-                                        && (MIN_DEVICE_NUM..=MAX_DEVICE_NUM).contains(&max) =>
+                                        && (DEVICE_MIN_NUM..=DEVICE_MAX_NUM).contains(&max) =>
                                 {
                                     (min, max)
                                 }
                                 _ => {
-                                    println!("Invalid device numbers. Must be between 8{}-{} and min must be <= max", MIN_DEVICE_NUM, MAX_DEVICE_NUM);
+                                    println!("Invalid device numbers. Must be between 8{}-{} and min must be <= max", DEVICE_MIN_NUM, DEVICE_MAX_NUM);
                                     continue;
                                 }
                             }
@@ -163,10 +198,11 @@ fn main() -> Result<(), Error> {
                         Err(e) => println!("Error: {}", e),
                     },
 
-                    "u" | "usbreset" | "resetusb" => match cbm.usb_device_reset() {
+                    "u" | "usbreset" | "resetusb" => 
+                    /*match cbm.usb_device_reset() {
                         Ok(()) => println!("USB reset complete"),
                         Err(e) => println!("Error: {}", e),
-                    },
+                    }*/println!("Not currently supported"),
 
                     "command" | "cmd" | "c" => {
                         if cmd.len() < 2 {
@@ -237,7 +273,7 @@ fn main() -> Result<(), Error> {
                     "n" | "num" => {
                         device = if cmd.len() > 1 {
                             match cmd[1].parse::<u8>() {
-                                Ok(num) if (MIN_DEVICE_NUM..=MAX_DEVICE_NUM).contains(&num) => {
+                                Ok(num) if (DEVICE_MIN_NUM..=DEVICE_MAX_NUM).contains(&num) => {
                                     println!("Set device number to {}", num);
                                     num
                                 }
@@ -256,7 +292,7 @@ fn main() -> Result<(), Error> {
                         println!("Available commands:");
                         println!(
                             "  a|scan [min max]         - Scan for devices (optional range {}-{})",
-                            MIN_DEVICE_NUM, MAX_DEVICE_NUM
+                            DEVICE_MIN_NUM, DEVICE_MAX_NUM
                         );
                         println!("  i|id|identify            - Get device info");
                         println!("  s|status                 - Get device status");
@@ -271,7 +307,7 @@ fn main() -> Result<(), Error> {
                         println!("  p|print                  - Print config");
                         println!(
                             "  n|num {}-{}               - Change device number",
-                            MIN_DEVICE_NUM, MAX_DEVICE_NUM
+                            DEVICE_MIN_NUM, DEVICE_MAX_NUM
                         );
                         println!("  h|?|help                 - Show this help");
                         println!("  q|x|quit|exit            - Exit program");
@@ -298,7 +334,8 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn scan(cbm: &Cbm, min: u8, max: u8) {
+//fn scan(cbm: &UsbCbm, min: u8, max: u8) {
+fn scan<D: Device>(cbm: &Cbm<D>, min: u8, max: u8) {
     let devices = cbm.scan_bus_range(min..=max);
     if let Ok(devices) = devices {
         if devices.len() > 0 {

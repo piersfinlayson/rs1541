@@ -12,10 +12,10 @@
 //!   high-level operations like reading files, writing files, and getting directory
 //!   listings.
 //!
-//! - [`CbmDriveUnit`]: Represents a physical drive unit, managing its channels and state.
+//! - [`crate::drive::CbmDriveUnit`]: Represents a physical drive unit, managing its channels and state.
 //!   A drive unit may contain one or two drives (like the 1541 vs 1571).
 //!
-//! - [`CbmChannel`]: Represents a communication channel to a drive. CBM drives use a
+//! - [`crate::channel::CbmChannel`]: Represents a communication channel to a drive. CBM drives use a
 //!   channel-based communication system, with 16 channels (0-15) available per drive.
 //!   Channel 15 is reserved for commands.
 //!
@@ -34,7 +34,7 @@
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Create a new CBM instance
-//!     let cbm = Cbm::new()?;
+//!     let cbm = Cbm::new_usb(None)?;
 //!
 //!     // Get directory listing from drive 8
 //!     let dir = cbm.dir(8, None)?;
@@ -107,20 +107,23 @@
 //! - Drive/DOS commands are limited to standard CBM DOS operations
 //!
 use crate::channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
+use crate::disk::BYTES_PER_BLOCK;
 use crate::string::{AsciiString, PetsciiString};
 use crate::validate::{validate_device, DeviceValidation};
 use crate::{
     BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDirListing, CbmErrorNumberOk, CbmStatus, CbmString,
-    DeviceError, Error, MAX_DEVICE_NUM,
+    DeviceError, Error,
 };
-use crate::disk::BYTES_PER_BLOCK;
+use crate::{DEVICE_MAX_NUM, DEVICE_MIN_NUM};
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
-use xum1541::constants::MIN_DEVICE_NUM;
-use xum1541::Error as Xum1541Error;
-use xum1541::{Bus, BusBuilder, CommunicationKind, DeviceChannel};
+use xum1541::{
+    Bus, BusBuilder, CommunicationError, Device, DeviceChannel, UsbBusBuilder, UsbDevice,
+};
+use xum1541::{Error as Xum1541Error, RemoteUsbDeviceConfig, UsbDeviceConfig};
+use xum1541::{RemoteUsbBus, RemoteUsbDevice};
 
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -140,9 +143,9 @@ use std::sync::Arc;
 /// # Example
 ///
 /// ```ignore
-/// use your_crate_name::Cbm;
+/// use rs1541::UsbCbm;
 ///
-/// let cbm = Cbm::new()?;
+/// let cbm = UsbCbm::new_usb(None)?;
 ///
 /// // Get directory listing
 /// let dir = cbm.dir(8, None)?;
@@ -152,16 +155,19 @@ use std::sync::Arc;
 /// let data = cbm.read_file(8, "MYFILE.PRG")?;
 /// ```
 #[derive(Debug, Clone)]
-pub struct Cbm {
-    handle: Arc<Mutex<Option<Bus>>>,
+pub struct Cbm<D: Device> {
+    handle: Arc<Mutex<Option<Bus<D>>>>,
 }
 
-/// Functions to manage this and the Bus object
-impl Cbm {
-    /// Creates a new CBM instance and opens the XUM1541 driver.
+impl Cbm<UsbDevice> {
+    /// Creates a new CBM instance and opens the xum1541 USB driver.
     ///
-    /// This function attempts to initialize communication with the XUM1541 driver
-    /// and returns a wrapped handle that can be used for further operations.
+    /// This function attempts to initialize communication with the XUM1541
+    /// driver via USB and returns a wrapped handle that can be used for further
+    /// operations.
+    ///
+    /// # Arguments
+    /// - `config` - Optional configuration for the USB device
     ///
     /// # Errors
     ///
@@ -173,16 +179,27 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// ```
+    /*
     pub fn new() -> Result<Self, Error> {
         trace!("Cbm::new");
-        let mut bus = BusBuilder::new().build()?;
+        let mut bus = UsbBusBuilder::new().build()?;
         bus.initialize()?;
 
         Ok(Self {
             handle: Arc::new(Mutex::new(Some(bus))),
         })
+    }
+    */
+    pub fn new_usb(config: Option<UsbDeviceConfig>) -> Result<Self, Error> {
+        trace!("Cbm::new_usb");
+        let mut builder = UsbBusBuilder::new();
+        if let Some(config) = config {
+            builder.device_config(config);
+        }
+        let bus = builder.build()?;
+        Ok(Self::new(bus))
     }
 
     /// Resets the USB device connection - by closing the driver then reopening
@@ -202,7 +219,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let mut cbm = Cbm::new()?;
+    /// let mut cbm = Cbm::new_usb(None)?;
     /// cbm.usb_device_reset()?;
     /// ```
     pub fn usb_device_reset(&mut self) -> Result<(), Error> {
@@ -214,7 +231,7 @@ impl Cbm {
         drop(old_bus);
 
         // Create a new instance (can fail)
-        let mut new_bus = BusBuilder::new().build()?;
+        let mut new_bus = UsbBusBuilder::new().build()?;
         new_bus.initialize()?;
 
         // Set the stored handle to the new instance
@@ -222,7 +239,29 @@ impl Cbm {
 
         Ok(())
     }
+}
 
+impl Cbm<RemoteUsbDevice> {
+    pub fn new_remote_usb(config: Option<RemoteUsbDeviceConfig>) -> Result<Self, Error> {
+        trace!("Cbm::new_remote_usb");
+        let device = RemoteUsbDevice::new(config)?;
+        let bus = RemoteUsbBus::new(device, xum1541::BUS_DEFAULT_TIMEOUT);
+        Ok(Self::new(bus))
+    }
+}
+
+// impl Cbm<UsbDevice> {
+impl<D: Device> Cbm<D> {
+    fn new(bus: Bus<D>) -> Self {
+        trace!("Cbm::new");
+        Self {
+            handle: Arc::new(Mutex::new(Some(bus))),
+        }
+    }
+}
+
+/// Functions to manage this and the Bus object
+impl<D: Device> Cbm<D> {
     /// Resets the entire IEC bus.
     ///
     /// This operation affects all devices on the bus and should be used sparingly.
@@ -237,7 +276,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// cbm.reset_bus()?;
     /// ```
     pub fn reset_bus(&self) -> Result<(), Error> {
@@ -247,7 +286,7 @@ impl Cbm {
 }
 
 /// Simple high level drive-access functions
-impl Cbm {
+impl<D: Device> Cbm<D> {
     /// Identifies a device on the IEC bus.
     ///
     /// Queries the specified device to determine its type (1541, 1571, etc.)
@@ -267,7 +306,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// let info = cbm.identify(8)?;
     /// println!("Device type: {}", info.device_type);
     /// ```
@@ -334,7 +373,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// let status = cbm.get_status(8)?;
     /// println!("Drive status: {}", status);
     /// ```
@@ -363,7 +402,7 @@ impl Cbm {
     /// let devices = cbm.scan_bus()?;
     /// ```
     pub fn scan_bus(&self) -> Result<HashMap<u8, CbmDeviceInfo>, Error> {
-        self.scan_bus_range(MIN_DEVICE_NUM..=MAX_DEVICE_NUM)
+        self.scan_bus_range(DEVICE_MIN_NUM..=DEVICE_MAX_NUM)
     }
 
     /// Scans the bus for devices within the range specified
@@ -415,7 +454,7 @@ impl Cbm {
         let dc = DeviceChannel::new(device, CBM_CHANNEL_CTRL)?;
         match self.bus_listen(dc) {
             Err(Error::Xum1541(Xum1541Error::Communication {
-                kind: CommunicationKind::StatusValue { .. },
+                kind: CommunicationError::StatusValue { .. },
             })) => {
                 debug!("Device {device} doesn't exist");
                 Ok(false)
@@ -450,7 +489,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     ///
     /// // Get directory from first drive
     /// let dir = cbm.dir(8, Some(0))?;
@@ -543,7 +582,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// cbm.validate_disk(8)?;
     /// ```
     pub fn validate_disk(&self, device: u8) -> Result<(), Error> {
@@ -571,7 +610,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// cbm.delete_file(8, "OLDFILE.PRG")?;
     /// ```
     pub fn delete_file(&self, device: u8, filename: &AsciiString) -> Result<(), Error> {
@@ -602,7 +641,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// cbm.format_disk(8, "MY DISK", "01")?;
     /// ```
     /// Format a disk with ASCII name and ID
@@ -632,7 +671,7 @@ impl Cbm {
 }
 
 /// Lower level public API
-impl Cbm {
+impl<D: Device> Cbm<D> {
     /// Function to read a number of consecutive bytes from a drive
     ///
     /// Currently only reads one byte at a time for DOS1 compatibility
@@ -878,7 +917,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// let data = cbm.read_file(8, "MYPROGRAM.PRG")?;
     /// ```
     /// Read a file with ASCII filename
@@ -953,7 +992,7 @@ impl Cbm {
     /// # Example
     ///
     /// ```ignore
-    /// let cbm = Cbm::new()?;
+    /// let cbm = Cbm::new_usb(None)?;
     /// let data = vec![0x01, 0x08, 0x0C, 0x08, 0x0A, 0x00];
     /// cbm.write_file(8, "NEWFILE.PRG", &data)?;
     /// ```
@@ -1098,7 +1137,7 @@ impl Cbm {
     }
 
     fn load_file_petscii_locked(
-        bus: &mut Bus,
+        bus: &mut Bus<D>,
         device: u8,
         filename: &PetsciiString,
     ) -> Result<Vec<u8>, Error> {
@@ -1144,7 +1183,7 @@ impl Cbm {
 }
 
 /// Internal functions
-impl Cbm {
+impl<D: Device> Cbm<D> {
     fn bus_listen(&self, dc: DeviceChannel) -> Result<(), Error> {
         let mut guard = self.handle.lock();
         let bus = (&mut guard).bus_mut_or_err()?;
@@ -1186,7 +1225,7 @@ impl Cbm {
     // passed into us, but we won't bother with that.
     fn handle_read_result(
         result: Result<usize, Xum1541Error>,
-        bus: &Bus,
+        bus: &Bus<D>,
         dc: DeviceChannel,
     ) -> Result<usize, Error> {
         match result {
@@ -1207,12 +1246,16 @@ impl Cbm {
         }
     }
 
-    fn bus_read_locked(bus: &mut Bus, dc: DeviceChannel, buf: &mut [u8]) -> Result<usize, Error> {
+    fn bus_read_locked(
+        bus: &mut Bus<D>,
+        dc: DeviceChannel,
+        buf: &mut [u8],
+    ) -> Result<usize, Error> {
         Self::handle_read_result(bus.read(buf), bus, dc)
     }
 
     fn bus_read_until_locked(
-        bus: &mut Bus,
+        bus: &mut Bus<D>,
         dc: DeviceChannel,
         buf: &mut Vec<u8>,
         pattern: &[u8],
@@ -1222,7 +1265,7 @@ impl Cbm {
 
     #[allow(dead_code)]
     fn bus_read_until_any_locked(
-        bus: &mut Bus,
+        bus: &mut Bus<D>,
         dc: DeviceChannel,
         buf: &mut Vec<u8>,
         pattern: &[u8],
@@ -1230,7 +1273,7 @@ impl Cbm {
         Self::handle_read_result(bus.read_until_any(buf, pattern), bus, dc)
     }
 
-    fn check_for_status_ok(bus: &mut Bus, device: u8, accept_73: bool) -> Result<(), Error> {
+    fn check_for_status_ok(bus: &mut Bus<D>, device: u8, accept_73: bool) -> Result<(), Error> {
         Self::get_status_locked(bus, device)
             .map_err(|e| {
                 let default_error =
@@ -1254,7 +1297,7 @@ impl Cbm {
     }
 
     fn send_command_petscii_locked(
-        bus: &mut Bus,
+        bus: &mut Bus<D>,
         dc: DeviceChannel,
         cmd: &PetsciiString,
     ) -> Result<(), Error> {
@@ -1265,7 +1308,7 @@ impl Cbm {
         bus.unlisten().map_err(|e| e.into())
     }
 
-    fn get_status_locked(bus: &mut Bus, device: u8) -> Result<CbmStatus, Error> {
+    fn get_status_locked(bus: &mut Bus<D>, device: u8) -> Result<CbmStatus, Error> {
         trace!("Cbm::get_status_locked device: {device}");
 
         // Set up DeviceChannel to read the status
@@ -1294,7 +1337,7 @@ impl Cbm {
     }
 
     fn read_from_drive_locked(
-        bus: &mut Bus,
+        bus: &mut Bus<D>,
         dc: DeviceChannel,
         buf: &mut [u8],
         read_all: bool,
@@ -1347,7 +1390,7 @@ impl Cbm {
     }
 
     fn open_file_petscii_locked(
-        bus: &mut Bus,
+        bus: &mut Bus<D>,
         dc: DeviceChannel,
         filename: &PetsciiString,
     ) -> Result<(), Error> {
@@ -1373,7 +1416,7 @@ impl Cbm {
         })
     }
 
-    fn close_file_locked(bus: &mut Bus, dc: DeviceChannel) -> Result<(), Error> {
+    fn close_file_locked(bus: &mut Bus<D>, dc: DeviceChannel) -> Result<(), Error> {
         bus.close(dc).map_err(|e| e.into())
     }
 }
