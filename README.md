@@ -42,7 +42,7 @@ use rs1541::{Cbm, Error};
 
 fn main() -> Result<(), Error> {
     // Driver automatically opens on creation and closes on drop
-    let cbm = Cbm::new_usb(None)?;
+    let cbm = Cbm::new(None, None)?;
 
     // Get drive information
     let id = cbm.identify(8)?;

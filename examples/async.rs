@@ -43,7 +43,7 @@ impl std::error::Error for TaskError {}
 async fn main() -> Result<(), Error> {
     env_logger::init();
 
-    let cbm = Arc::new(Cbm::new_usb(None)?);
+    let cbm = Arc::new(Cbm::new(None, None)?);
 
     // Thread 1
     let cbm1 = Arc::clone(&cbm);

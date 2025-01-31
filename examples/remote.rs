@@ -10,13 +10,16 @@
 //!
 //! Then run this to do a remote directory listing over the network
 use rs1541::{Cbm, DeviceError, Error, Xum1541Error};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process::exit;
+
 fn main() -> Result<(), Error> {
     env_logger::init();
     log::info!("Started logging");
 
     // Driver automatically opens on creation and closes on drop
-    let cbm = match Cbm::new_remote_usb(None) {
+    let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1541);
+    let cbm = match Cbm::new(None, Some(remote)) {
         Err(Error::Xum1541(error)) => match error {
             Xum1541Error::DeviceAccess { .. } | Xum1541Error::Usb(_) => {
                 println!("Failed to connect to xum1541 device\nError: {error}");

@@ -5,14 +5,11 @@ use crate::error::{DeviceError, Error};
 use crate::CbmDirListing;
 use crate::CbmString;
 
-use xum1541::Device;
-
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 
 use parking_lot::Mutex;
 use std::fmt;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 /// Represents a physical drive unit
@@ -21,15 +18,14 @@ use std::sync::Arc;
 /// which may contain one or two drives.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct CbmDriveUnit<D: Device> {
+pub struct CbmDriveUnit {
     pub device_number: u8,
     pub device_info: CbmDeviceInfo,
     channel_manager: Arc<Mutex<CbmChannelManager>>,
     busy: bool,
-    _phantom: PhantomData<D>,
 }
 
-impl<D: Device> fmt::Display for CbmDriveUnit<D> {
+impl fmt::Display for CbmDriveUnit {
     /// Provides a string representation of the drive unit.
     ///
     /// Returns a string containing the device number and type.
@@ -69,10 +65,10 @@ impl<D: Device> fmt::Display for CbmDriveUnit<D> {
 /// let status = drive.send_init(cbm, &vec![])?;
 /// ```
 ///
-impl<D: Device> CbmDriveUnit<D> {
+impl CbmDriveUnit {
     /// Tests whether a drive exists and if so, detects the type and creates
     /// a CbmDriveUnit object for it.
-    pub fn try_from_bus(cbm: &Cbm<D>, device: u8) -> Result<Self, Error> {
+    pub fn try_from_bus(cbm: &Cbm, device: u8) -> Result<Self, Error> {
         if cbm.drive_exists(device)? {
             let info = cbm.identify(device)?;
             Ok(Self::new(device, info))
@@ -105,7 +101,6 @@ impl<D: Device> CbmDriveUnit<D> {
             device_info,
             channel_manager: Arc::new(Mutex::new(CbmChannelManager::new())),
             busy: false,
-            _phantom: PhantomData,
         }
     }
 
@@ -133,7 +128,7 @@ impl<D: Device> CbmDriveUnit<D> {
     /// let status = drive.get_status(&cbm)?;
     /// println!("Drive status: {}", status);
     /// ```
-    pub fn get_status(&mut self, cbm: &Cbm<D>) -> Result<CbmStatus, Error> {
+    pub fn get_status(&mut self, cbm: &Cbm) -> Result<CbmStatus, Error> {
         self.busy = true;
         cbm.get_status(self.device_number)
             .inspect(|_| self.busy = false)
@@ -163,7 +158,7 @@ impl<D: Device> CbmDriveUnit<D> {
     ///
     /// ```no_run
     /// use rs1541::{Cbm, CbmDriveUnit, CbmDeviceType, CbmErrorNumber};
-    /// let mut cbm = Cbm::new().unwrap();
+    /// let mut cbm = Cbm::new(None, None).unwrap();
     /// let mut drive = CbmDriveUnit::try_from_bus(&cbm, 8).unwrap();
     ///
     /// // Initialize all drives, ignoring "drive not ready" errors
@@ -172,7 +167,7 @@ impl<D: Device> CbmDriveUnit<D> {
     /// ```
     pub fn send_init(
         &mut self,
-        cbm: &mut Cbm<D>,
+        cbm: &mut Cbm,
         ignore_errors: &Vec<CbmErrorNumber>,
     ) -> Vec<Result<CbmStatus, Error>> {
         self.busy = true;
@@ -293,7 +288,7 @@ impl<D: Device> CbmDriveUnit<D> {
     ///
     /// [`(Vec<CbmDirListing>, CbmStatus)`] - If at least partially successful.  The CbmStatus will be from the first failure if one occured.  Partial success means a directory listing was secured from at least one of the drives, and we didn't hit a fatal error during communication
     /// [`Error`] - if a serious error occurred.
-    pub fn dir(&self, cbm: &mut Cbm<D>) -> Result<(Vec<CbmDirListing>, CbmStatus), Error> {
+    pub fn dir(&self, cbm: &mut Cbm) -> Result<(Vec<CbmDirListing>, CbmStatus), Error> {
         let mut results = Vec::new();
 
         // Single unit drives do not like to be asked to load $0 - so don't
@@ -343,7 +338,7 @@ impl<D: Device> CbmDriveUnit<D> {
 
     pub fn read_file(
         &self,
-        cbm: &mut Cbm<D>,
+        cbm: &mut Cbm,
         filename: &CbmString,
     ) -> Result<(Vec<u8>, CbmStatus), Error> {
         let data = cbm.load_file_petscii(self.device_number, &filename.to_petscii())?;

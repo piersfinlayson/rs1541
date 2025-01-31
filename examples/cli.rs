@@ -1,5 +1,4 @@
 use rs1541::{AsciiString, Cbm, CbmString, Error, DEVICE_MAX_NUM, DEVICE_MIN_NUM};
-use xum1541::{Device, RemoteUsbDeviceConfig};
 
 use clap::Parser;
 #[allow(unused_imports)]
@@ -55,19 +54,15 @@ fn main() -> Result<(), Error> {
                 message: format!("Invalid remote address: {}", e),
             })?;
 
-        let config = RemoteUsbDeviceConfig {
-            serial_num: None,
-            remote_addr: Some(addr),
-        };
-        let cbm = Cbm::new_remote_usb(Some(config))?;
+        let cbm = Cbm::new(None, Some(addr))?;
         run(cbm, args)
     } else {
-        let cbm = Cbm::new_usb(None)?;
+        let cbm = Cbm::new(None, None)?;
         run(cbm, args)
     }
 }
 
-fn run<D: Device>(cbm: Cbm<D>, args: Args) -> Result<(), Error> {
+fn run(cbm: Cbm, args: Args) -> Result<(), Error> {
     let mut device = args.device;
 
     // Setup command line editor
@@ -335,7 +330,7 @@ fn run<D: Device>(cbm: Cbm<D>, args: Args) -> Result<(), Error> {
 }
 
 //fn scan(cbm: &UsbCbm, min: u8, max: u8) {
-fn scan<D: Device>(cbm: &Cbm<D>, min: u8, max: u8) {
+fn scan(cbm: &Cbm, min: u8, max: u8) {
     let devices = cbm.scan_bus_range(min..=max);
     if let Ok(devices) = devices {
         if devices.len() > 0 {

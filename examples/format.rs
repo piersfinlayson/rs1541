@@ -8,7 +8,7 @@ use rs1541::{AsciiString, Cbm, Error};
 
 fn main() -> Result<(), Error> {
     // Driver automatically opens on creation and closes on drop
-    let cbm = Cbm::new_usb(None)?;
+    let cbm = Cbm::new(None, None)?;
 
     let disk_name = "formatted disk";
     let disk_id = "aa";

@@ -32,7 +32,7 @@ fn main() -> Result<(), Error> {
     .expect("Error setting Ctrl-C handler");
 
     // Create CBM interface
-    let cbm = Cbm::new_usb(None)?;
+    let cbm = Cbm::new(None, None)?;
 
     let mut success_count = 0u64;
     let mut fail_count = 0u64;
