@@ -84,6 +84,9 @@ pub use xum1541::DeviceChannel;
 pub use xum1541::Error as Xum1541Error;
 pub use xum1541::{Device, RemoteUsbDevice, UsbDevice};
 
+pub use xum1541::device::remoteusb::DEFAULT_ADDR as DEFAULT_REMOTE_ADDR;
+pub use xum1541::device::remoteusb::DEFAULT_PORT as DEFAULT_REMOTE_PORT;
+
 /// A trait to allow us to get the Bus as a reference from a MutexGuard and
 /// automatically convert the None case to a Error
 trait BusGuardRef {

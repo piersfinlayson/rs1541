@@ -191,9 +191,10 @@ impl Cbm {
     pub fn new(serial: Option<u8>, remote: Option<SocketAddr>) -> Result<Self, Error> {
         trace!("Cbm::new");
 
+        // Create the bus and initialize it
         let config = CbmConfig { serial, remote };
-
-        let bus = Self::new_bus(&config)?;
+        let mut bus = Self::new_bus(&config)?;
+        bus.initialize()?;
 
         Ok(Self {
             config,

@@ -4,7 +4,6 @@ use clap::Parser;
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn, LevelFilter};
 use rustyline::{error::ReadlineError, DefaultEditor};
-use std::net::SocketAddr;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -47,22 +46,22 @@ fn main() -> Result<(), Error> {
     info!("rs1541 Test Application");
 
     // Create Cbm object and run the program
-    if args.remote {
-        let addr: SocketAddr = format!("{}:{}", args.remote_ip, args.remote_port)
-            .parse()
-            .map_err(|e| Error::Validation {
-                message: format!("Invalid remote address: {}", e),
-            })?;
-
-        let cbm = Cbm::new(None, Some(addr))?;
-        run(cbm, args)
+    let addr = if args.remote {
+        Some(
+            format!("{}:{}", args.remote_ip, args.remote_port)
+                .parse()
+                .map_err(|e| Error::Validation {
+                    message: format!("Invalid remote address: {}", e),
+                })?,
+        )
     } else {
-        let cbm = Cbm::new(None, None)?;
-        run(cbm, args)
-    }
+        None
+    };
+    let mut cbm = Cbm::new(None, addr)?;
+    run(&mut cbm, args)
 }
 
-fn run(cbm: Cbm, args: Args) -> Result<(), Error> {
+fn run(cbm: &mut Cbm, args: Args) -> Result<(), Error> {
     let mut device = args.device;
 
     // Setup command line editor
@@ -193,11 +192,10 @@ fn run(cbm: Cbm, args: Args) -> Result<(), Error> {
                         Err(e) => println!("Error: {}", e),
                     },
 
-                    "u" | "usbreset" | "resetusb" => 
-                    /*match cbm.usb_device_reset() {
+                    "u" | "usbreset" | "resetusb" => match cbm.usb_device_reset() {
                         Ok(()) => println!("USB reset complete"),
                         Err(e) => println!("Error: {}", e),
-                    }*/println!("Not currently supported"),
+                    },
 
                     "command" | "cmd" | "c" => {
                         if cmd.len() < 2 {
