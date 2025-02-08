@@ -1,7 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [0.3.0] - 2025-??-??
+## [0.3.1] - 2025-02-08
+### Changed
+- Move to xum1541 0.3.1
+
+## [0.3.0] - 2025-01-31
 ### Adeed
 - [`Drive::read_file`]
 
