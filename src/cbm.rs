@@ -115,6 +115,7 @@ use crate::{
     DeviceError, Error,
 };
 use crate::{DEVICE_MAX_NUM, DEVICE_MIN_NUM};
+use crate::Xum1541DeviceInfo;
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
@@ -277,6 +278,15 @@ impl Cbm {
     pub fn reset_bus(&self) -> Result<(), Error> {
         self.handle.lock().bus_mut_or_err()?.reset()?;
         Ok(())
+    }
+
+    /// Gets information about the xum1541 device this [`Cbm`] instance
+    /// is using
+    /// 
+    /// Xum1541DeviveInfo contains information like serial number, firmware
+    /// version, and device capabilities. 
+    pub fn xum1541_info(&self) -> Result<Option<Xum1541DeviceInfo>, Error> {
+        Ok(self.handle.lock().bus_mut_or_err()?.device_info())
     }
 }
 

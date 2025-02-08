@@ -8,6 +8,10 @@ use rustyline::{error::ReadlineError, DefaultEditor};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// xum1541 serial number to use, 0 means use any
+    #[arg(short, long, default_value_t = 0)]
+    serial: u8,
+
     /// Device number to test (8-15)
     #[arg(short, long, default_value_t = 8)]
     device: u8,
@@ -29,7 +33,7 @@ struct Args {
     remote_port: u16,
 }
 
-fn main() -> Result<(), Error> {
+fn main() {
     let args = Args::parse();
 
     // Setup logging
@@ -45,6 +49,16 @@ fn main() -> Result<(), Error> {
 
     info!("rs1541 Test Application");
 
+    match run(args) {
+        Err(e) => {
+            println!("Error: {e}");
+            std::process::exit(1);
+        }
+        Ok(_) => (),
+    };
+}
+
+fn run(args: Args) -> Result<(), Error> {
     // Create Cbm object and run the program
     let addr = if args.remote {
         Some(
@@ -57,11 +71,12 @@ fn main() -> Result<(), Error> {
     } else {
         None
     };
-    let mut cbm = Cbm::new(None, addr)?;
-    run(&mut cbm, args)
-}
+    let serial = match args.serial {
+        0 => None,
+        s => Some(s),
+    };
+    let mut cbm = Cbm::new(serial, addr)?;
 
-fn run(cbm: &mut Cbm, args: Args) -> Result<(), Error> {
     let mut device = args.device;
 
     // Setup command line editor
@@ -259,8 +274,30 @@ fn run(cbm: &mut Cbm, args: Args) -> Result<(), Error> {
                     }
 
                     "print" | "p" => {
-                        println!("Device number: {}", device);
-                        println!("Verbosity:     {}", args.verbose);
+                        println!("Device number:  {}", device);
+                        println!("Verbosity:      {}", args.verbose);
+                        println!("xum1541 serial: {}", args.serial);
+                    }
+
+                    "xum1541" | "xi" => {
+                        match cbm.xum1541_info() {
+                            Ok(info) => match info {
+                                Some(info) => {
+                                    println!("Product:          {}", info.product);
+                                    println!("Manufacturer:     {}", info.manufacturer.clone().unwrap_or_default());
+                                    println!("Serial number:    {}", info.serial_number.clone().unwrap_or_default());
+                                    println!("Firmware version: {}", info.firmware_version);
+                                    println!("Capabilities:");
+                                    info.print_capabilities();
+                                    println!("Init status:");
+                                    info.print_status();
+                                    println!("Debug info:");
+                                    info.print_debug();
+                                }
+                                None => println!("No xum1541 information available"),
+                            },
+                            Err(e) => println!("Error: {e}"),
+                        }
                     }
 
                     "n" | "num" => {
@@ -298,6 +335,7 @@ fn run(cbm: &mut Cbm, args: Args) -> Result<(), Error> {
                         println!("  f|format <name> <id>     - Format disk");
                         println!("  l|load <filename>        - Load file from disk");
                         println!("  p|print                  - Print config");
+                        println!("  xi|xum1541               - Print xum1541 device info");
                         println!(
                             "  n|num {}-{}               - Change device number",
                             DEVICE_MIN_NUM, DEVICE_MAX_NUM

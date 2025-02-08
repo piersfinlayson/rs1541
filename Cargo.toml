@@ -20,6 +20,10 @@ categories = [
 name = "rs1541"
 path = "src/lib.rs"
 
+[[bin]]
+name = "cli"
+path = "bin/cli.rs"
+
 [dependencies]
 xum1541 = { version = "0.3.1" }
 log = "0.4"
@@ -28,14 +32,13 @@ serde = { version = "1.0", features = ["derive"] }
 parking_lot = "0.12"
 regex = "1.11"
 thiserror = "2.0"
+clap = { version = "4.5", features = ["derive"] }  # Required by bin/cli
+rustyline = "15"  # Required by bin/cli
+env_logger = "0.11"  # Required by bin/cli
 
 [build-dependencies]
 bindgen = "0.71"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }  # Required by examples/async
-rustyline = "15"  # Required by examples/cli
-anyhow = "1.0"  # Required by examples/cli
-clap = { version = "4.5", features = ["derive"] }  # Required by examples/cli
-env_logger = "0.11"  # Required by examples/cli
 ctrlc = "3.4" # Required by examples/statusloop
