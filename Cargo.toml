@@ -1,6 +1,6 @@
 [package]
 name = "rs1541"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 authors = ["Piers Finlayson <piers@piers.rocks>"]
 description = "Rust bindings and helper functions for accessing Commodore disk drives"
@@ -25,7 +25,7 @@ name = "cli"
 path = "bin/cli.rs"
 
 [dependencies]
-xum1541 = { version = "0.3.1" }
+xum1541 = { version = "0.3.2", path = "../xum1541" }
 log = "0.4"
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }

@@ -110,18 +110,18 @@ use crate::channel::{CBM_CHANNEL_CTRL, CBM_CHANNEL_LOAD};
 use crate::disk::BYTES_PER_BLOCK;
 use crate::string::{AsciiString, PetsciiString};
 use crate::validate::{validate_device, DeviceValidation};
+use crate::Xum1541DeviceInfo;
 use crate::{
     BusGuardMut, BusGuardRef, CbmDeviceInfo, CbmDirListing, CbmErrorNumberOk, CbmStatus, CbmString,
     DeviceError, Error,
 };
 use crate::{DEVICE_MAX_NUM, DEVICE_MIN_NUM};
-use crate::Xum1541DeviceInfo;
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use xum1541::Error as Xum1541Error;
-use xum1541::{Bus, BusBuilder, CommunicationError, DeviceChannel};
+use xum1541::{Bus, BusBuilder, BusRecoveryType, CommunicationError, DeviceChannel};
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -163,6 +163,7 @@ pub struct Cbm {
 struct CbmConfig {
     serial: Option<u8>,
     remote: Option<SocketAddr>,
+    recovery_type: BusRecoveryType,
 }
 
 /// Functions to manage this and the Bus object
@@ -193,7 +194,11 @@ impl Cbm {
         trace!("Cbm::new");
 
         // Create the bus and initialize it
-        let config = CbmConfig { serial, remote };
+        let config = CbmConfig {
+            serial,
+            remote,
+            recovery_type: BusRecoveryType::Off,
+        };
         let mut bus = Self::new_bus(&config)?;
         bus.initialize()?;
 
@@ -213,7 +218,17 @@ impl Cbm {
         if let Some(remote) = config.remote {
             builder.remote(remote)?;
         }
+        builder.recovery(config.recovery_type.clone());
         builder.build().map_err(|e| e.into())
+    }
+
+    pub fn set_bus_recovery_type(&mut self, recovery_type: BusRecoveryType) -> Result<(), Error> {
+        self.config.recovery_type = recovery_type.clone();
+        self.handle
+            .lock()
+            .bus_mut_or_err()?
+            .set_recovery_type(recovery_type);
+        Ok(())
     }
 
     /// Resets the USB device connection - by closing the driver then reopening
@@ -282,9 +297,9 @@ impl Cbm {
 
     /// Gets information about the xum1541 device this [`Cbm`] instance
     /// is using
-    /// 
+    ///
     /// Xum1541DeviveInfo contains information like serial number, firmware
-    /// version, and device capabilities. 
+    /// version, and device capabilities.
     pub fn xum1541_info(&self) -> Result<Option<Xum1541DeviceInfo>, Error> {
         Ok(self.handle.lock().bus_mut_or_err()?.device_info())
     }

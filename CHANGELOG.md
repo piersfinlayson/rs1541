@@ -2,10 +2,13 @@
 All notable changes to this project will be documented in this file.
 
 ## [0.3.2] - 2025-??-??
-### Changed
-- Moved examples/cli to bin/cli
+### Added
 - Added support to bin/cli for serial numbers
 - Added cbm.xum1541_info() to get xum1541 device info
+- Use new BusRecoveryType::All in cli
+
+### Changed
+- Moved examples/cli to bin/cli
 
 ## [0.3.1] - 2025-02-08
 ### Changed

@@ -79,11 +79,12 @@ pub use util::{ascii_str_to_petscii, ascii_to_petscii, petscii_str_to_ascii, pet
 pub use validate::{validate_device, DeviceValidation};
 
 // Export DeviceChannel as we use in our API
+pub use xum1541::BusRecoveryType;
 pub use xum1541::DeviceAccessError;
 pub use xum1541::DeviceChannel;
+pub use xum1541::DeviceInfo as Xum1541DeviceInfo;
 pub use xum1541::Error as Xum1541Error;
 pub use xum1541::{Device, RemoteUsbDevice, UsbDevice};
-pub use xum1541::DeviceInfo as Xum1541DeviceInfo;
 
 pub use xum1541::device::remoteusb::DEFAULT_ADDR as DEFAULT_REMOTE_ADDR;
 pub use xum1541::device::remoteusb::DEFAULT_PORT as DEFAULT_REMOTE_PORT;

@@ -1,4 +1,4 @@
-use rs1541::{AsciiString, Cbm, CbmString, Error, DEVICE_MAX_NUM, DEVICE_MIN_NUM};
+use rs1541::{AsciiString, BusRecoveryType, Cbm, CbmString, Error, DEVICE_MAX_NUM, DEVICE_MIN_NUM};
 
 use clap::Parser;
 #[allow(unused_imports)]
@@ -76,6 +76,7 @@ fn run(args: Args) -> Result<(), Error> {
         s => Some(s),
     };
     let mut cbm = Cbm::new(serial, addr)?;
+    cbm.set_bus_recovery_type(BusRecoveryType::All)?;
 
     let mut device = args.device;
 
@@ -279,26 +280,30 @@ fn run(args: Args) -> Result<(), Error> {
                         println!("xum1541 serial: {}", args.serial);
                     }
 
-                    "xum1541" | "xi" => {
-                        match cbm.xum1541_info() {
-                            Ok(info) => match info {
-                                Some(info) => {
-                                    println!("Product:          {}", info.product);
-                                    println!("Manufacturer:     {}", info.manufacturer.clone().unwrap_or_default());
-                                    println!("Serial number:    {}", info.serial_number.clone().unwrap_or_default());
-                                    println!("Firmware version: {}", info.firmware_version);
-                                    println!("Capabilities:");
-                                    info.print_capabilities();
-                                    println!("Init status:");
-                                    info.print_status();
-                                    println!("Debug info:");
-                                    info.print_debug();
-                                }
-                                None => println!("No xum1541 information available"),
-                            },
-                            Err(e) => println!("Error: {e}"),
-                        }
-                    }
+                    "xum1541" | "xi" => match cbm.xum1541_info() {
+                        Ok(info) => match info {
+                            Some(info) => {
+                                println!("Product:          {}", info.product);
+                                println!(
+                                    "Manufacturer:     {}",
+                                    info.manufacturer.clone().unwrap_or_default()
+                                );
+                                println!(
+                                    "Serial number:    {}",
+                                    info.serial_number.clone().unwrap_or_default()
+                                );
+                                println!("Firmware version: {}", info.firmware_version);
+                                println!("Capabilities:");
+                                info.print_capabilities();
+                                println!("Init status:");
+                                info.print_status();
+                                println!("Debug info:");
+                                info.print_debug();
+                            }
+                            None => println!("No xum1541 information available"),
+                        },
+                        Err(e) => println!("Error: {e}"),
+                    },
 
                     "n" | "num" => {
                         device = if cmd.len() > 1 {
